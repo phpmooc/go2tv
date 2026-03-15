@@ -87,6 +87,8 @@
     "Devices": "Devices",
     "Copy": "Copy",
     "RTMP server stopped unexpectedly": "RTMP server stopped unexpectedly",
+    "RTMP server timed out waiting for an incoming stream.": "RTMP server timed out waiting for an incoming stream.",
+    "No stream was received within %d minutes. Start streaming from OBS or another RTMP client, then enable the RTMP server again.": "No stream was received within %d minutes. Start streaming from OBS or another RTMP client, then enable the RTMP server again.",
     "Browse": "Browse",
     "Media File": "Media File",
     "Media": "Media",

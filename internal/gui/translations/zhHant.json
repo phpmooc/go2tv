@@ -87,6 +87,8 @@
     "Devices": "裝置",
     "Copy": "复制",
     "RTMP server stopped unexpectedly": "RTMP 伺服器意外停止",
+    "RTMP server timed out waiting for an incoming stream.": "RTMP 伺服器等待傳入串流時逾時。",
+    "No stream was received within %d minutes. Start streaming from OBS or another RTMP client, then enable the RTMP server again.": "%d 分鐘內未收到任何串流。請先從 OBS 或其他 RTMP 用戶端開始串流，然後重新啟用 RTMP 伺服器。",
     "Browse": "瀏覽",
     "Media File": "媒體檔案",
     "Media": "媒體",

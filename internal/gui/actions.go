@@ -2075,11 +2075,7 @@ func startRTMPServer(screen *FyneScreen) {
 			err := screen.rtmpServer.Wait()
 			// Only react if we didn't intentionally stop it
 			if screen.rtmpServer != nil {
-				errMsg := lang.L("RTMP server stopped unexpectedly")
-				if err != nil {
-					errMsg = fmt.Sprintf("%s: %v", errMsg, err)
-				}
-				check(screen, errors.New(errMsg))
+				check(screen, formatRTMPServerWaitError(err))
 				stopRTMPServer(screen)
 				stopAction(screen)
 			}
@@ -2128,6 +2124,26 @@ func startRTMPServer(screen *FyneScreen) {
 		})
 		screen.rtmpMu.Unlock()
 	}()
+}
+
+func formatRTMPServerWaitError(err error) error {
+	if err == nil {
+		return errors.New(lang.L("RTMP server stopped unexpectedly"))
+	}
+
+	if rtmp.IsListenTimeoutError(err) {
+		timeoutMinutes := rtmp.ListenTimeoutSeconds / 60
+		return errors.New(fmt.Sprintf(
+			"%s\n\n%s",
+			lang.L("RTMP server timed out waiting for an incoming stream."),
+			fmt.Sprintf(
+				lang.L("No stream was received within %d minutes. Start streaming from OBS or another RTMP client, then enable the RTMP server again."),
+				timeoutMinutes,
+			),
+		))
+	}
+
+	return fmt.Errorf("%s: %w", lang.L("RTMP server stopped unexpectedly"), err)
 }
 
 func stopRTMPServer(screen *FyneScreen) {
@@ -2226,7 +2242,7 @@ func waitForRTMPStream(screen *FyneScreen) error {
 		screen.PlayPause.Disable()
 	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
 	ticker := time.NewTicker(1 * time.Second)

@@ -3,7 +3,10 @@ package rtmp
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 )
+
+const ListenTimeoutSeconds = 600
 
 // BuildCLICommand constructs the ffmpeg command arguments for the RTMP server
 func BuildCLICommand(streamKey, port, tempDir string) ([]string, error) {
@@ -12,7 +15,8 @@ func BuildCLICommand(streamKey, port, tempDir string) ([]string, error) {
 
 	return []string{
 		"-listen", "1",
-		"-timeout", "30000000",
+		// FFmpeg RTMP protocol expects seconds here.
+		"-timeout", strconv.Itoa(ListenTimeoutSeconds),
 		"-fflags", "nobuffer",
 		"-flags", "low_delay",
 		"-probesize", "32",
