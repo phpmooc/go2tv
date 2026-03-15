@@ -2,6 +2,7 @@ package rtmp
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 )
 
@@ -18,8 +19,9 @@ func TestBuildCLICommandUsesSecondBasedListenTimeout(t *testing.T) {
 		t.Fatal("BuildCLICommand() missing -timeout flag")
 	}
 
-	if timeout != "300" {
-		t.Fatalf("BuildCLICommand() timeout = %q, want %q", timeout, "300")
+	want := strconv.Itoa(ListenTimeoutSeconds)
+	if timeout != want {
+		t.Fatalf("BuildCLICommand() timeout = %q, want %q", timeout, want)
 	}
 }
 
