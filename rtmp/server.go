@@ -1,16 +1,19 @@
 package rtmp
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 )
 
 // Server manages the RTMP server process (ffmpeg)
 type Server struct {
 	cmd     *exec.Cmd
+	stderr  bytes.Buffer
 	tempDir string
 	mu      sync.Mutex
 	running bool
@@ -66,6 +69,8 @@ func (s *Server) Start(ffmpegPath, streamKey, port string) (string, error) {
 
 	cmd := exec.Command(ffmpegPath, args...)
 	setSysProcAttr(cmd)
+	s.stderr.Reset()
+	cmd.Stderr = &s.stderr
 
 	// Start the command
 	if err := cmd.Start(); err != nil {
@@ -88,7 +93,16 @@ func (s *Server) Wait() error {
 		return fmt.Errorf("server not started")
 	}
 	// Wait should not hold the lock for the entire duration as it blocks
-	return s.cmd.Wait()
+	err := s.cmd.Wait()
+	if err == nil {
+		return nil
+	}
+
+	if stderr := s.stderrTail(240); stderr != "" {
+		return fmt.Errorf("%w: %s", err, stderr)
+	}
+
+	return err
 }
 
 // Stop terminates the RTMP server
@@ -117,4 +131,15 @@ func (s *Server) internalCleanup() {
 	if s.tempDir != "" {
 		_ = os.RemoveAll(s.tempDir)
 	}
+}
+
+func (s *Server) stderrTail(max int) string {
+	output := strings.TrimSpace(s.stderr.String())
+	if output == "" {
+		return ""
+	}
+	if max <= 0 || len(output) <= max {
+		return output
+	}
+	return output[len(output)-max:]
 }
