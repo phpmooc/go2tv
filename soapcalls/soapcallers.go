@@ -623,6 +623,10 @@ func (p *TVPayload) SeekSoapCall(reltime string) error {
 		RawJSON("Headers", headerBytesRes).
 		Msg(string(resBytes))
 
+	if res.StatusCode < http.StatusOK || res.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("SeekSoapCall unexpected status %d: %s", res.StatusCode, strings.TrimSpace(string(resBytes)))
+	}
+
 	return nil
 }
 

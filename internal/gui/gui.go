@@ -95,6 +95,7 @@ type FyneScreen struct {
 	ffmpegPathChanged        bool
 	Medialoop                bool
 	sliderActive             bool
+	dlnaSeekRestart          bool
 	imageAutoSkipTimeout     int
 	Transcode                bool
 	Screencast               bool
@@ -131,6 +132,7 @@ type FyneScreen struct {
 	imageAutoSkipMediaPath   string
 	imageAutoSkipCancel      context.CancelFunc
 	rtmpMu                   sync.Mutex
+	resumeSession            resumePlaybackSession
 }
 
 type debugWriter struct {

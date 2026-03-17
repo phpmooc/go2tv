@@ -481,7 +481,15 @@ func playAction(screen *FyneScreen) {
 
 		var mediaType string
 		var isSeek bool
+		var directResumeSeek int
 		transcodeEnabled := screen.Transcode
+		existingSeek := 0
+		if screen.dlnaSeekRestart {
+			existingSeek = screen.ffmpegSeek
+		}
+		screen.dlnaSeekRestart = false
+		screen.ffmpegSeek = existingSeek
+		screen.clearResumeSession()
 
 		if !screen.ExternalMediaURL.Checked {
 			if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked {
@@ -501,6 +509,9 @@ func playAction(screen *FyneScreen) {
 				if !transcodeEnabled {
 					isSeek = true
 				}
+
+				storedResume := screen.prepareResumeSession(mediaType)
+				screen.ffmpegSeek, directResumeSeek = computeResumeStart(existingSeek, storedResume, transcodeEnabled)
 			}
 		}
 
@@ -663,6 +674,10 @@ func playAction(screen *FyneScreen) {
 				screen.controlURL = ""
 			})
 			stopAction(screen)
+			return
+		}
+		if directResumeSeek > 0 && !screen.tvdata.Transcode {
+			screen.applyInitialDLNAResume(screen.tvdata, directResumeSeek)
 		}
 		if strings.HasPrefix(mediaType, "image/") {
 			screen.updateScreenState("Playing")
@@ -856,6 +871,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 
 	// Reset seek position for fresh playback (auto-play next file needs this)
 	screen.ffmpegSeek = 0
+	screen.clearResumeSession()
 
 	transcode := screen.Transcode
 	ffmpegSeek := screen.ffmpegSeek
@@ -1089,6 +1105,13 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		mediaTypeSlice := strings.Split(mediaType, "/")
 		if len(mediaTypeSlice) > 0 && (mediaTypeSlice[0] == "image" || mediaTypeSlice[0] == "audio") {
 			transcode = false
+		}
+
+		storedResume := screen.prepareResumeSession(mediaType)
+		ffmpegSeek = computeChromecastResumeStart(ffmpegSeek, storedResume)
+		screen.ffmpegSeek = 0
+		if transcode {
+			screen.ffmpegSeek = ffmpegSeek
 		}
 
 		// Set casting media type
@@ -1390,6 +1413,7 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 					screen.CurrentPos.Set(current)
 					screen.EndPos.Set(total)
 				})
+				screen.persistResumeProgress(int(currentTime), duration, false)
 
 				// Fallback: Detect media completion when CurrentTime reaches Duration
 				// go-chromecast doesn't always report IDLE when media finishes
@@ -1795,6 +1819,10 @@ func previewmedia(screen *FyneScreen) {
 }
 
 func stopAction(screen *FyneScreen) {
+	positionSeconds, durationSeconds := screen.displayedResumeProgress()
+	screen.persistResumeProgress(positionSeconds, durationSeconds, true)
+	screen.clearResumeSession()
+
 	screen.nextChromecastActionID()
 	screen.cancelImageAutoSkipTimer()
 

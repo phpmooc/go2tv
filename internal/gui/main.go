@@ -353,6 +353,7 @@ func (t *tappedSlider) seekDLNAAsync() {
 			t.screen.EndPos.Set(end)
 			if isTranscode {
 				t.screen.ffmpegSeek = roundedInt
+				t.screen.dlnaSeekRestart = true
 			}
 		})
 
@@ -1125,6 +1126,7 @@ func sliderUpdate(s *FyneScreen) {
 					s.CurrentPos.Set(currentClock)
 					s.EndPos.Set(end)
 				})
+				s.persistResumeProgress(current, float64(total), false)
 			}
 		}
 	}

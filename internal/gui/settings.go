@@ -96,6 +96,14 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	ffmpegTextEntry := widget.NewEntry()
 	var updatingFFmpegEntry bool
 
+	rememberPlaybackPositionText := widget.NewLabel(lang.L("Remember Playback Position"))
+	rememberPlaybackPositionCheck := widget.NewCheck("", func(enabled bool) {
+		fyne.CurrentApp().Preferences().SetBool(rememberPlaybackPositionPref, enabled)
+	})
+	rememberPlaybackPositionCheck.SetChecked(
+		fyne.CurrentApp().Preferences().BoolWithFallback(rememberPlaybackPositionPref, false),
+	)
+
 	ffmpegFolderReset := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		fyne.CurrentApp().Preferences().SetString("ffmpeg", "")
 		path := ffmpegDirDisplayPath("")
@@ -340,6 +348,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		themeText, dropdownTheme,
 		languageText, dropdownLanguage,
 		ffmpegText, ffmpegPathControls,
+		rememberPlaybackPositionText, rememberPlaybackPositionCheck,
 	)
 
 	autoNextSettings := container.New(layout.NewFormLayout(),

@@ -205,6 +205,27 @@ func TestSetAVTransportSoapCallRetriesWithLegacyMetadataOnFault(t *testing.T) {
 	}
 }
 
+func TestSeekSoapCallReturnsErrorOnFaultStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`<s:Fault><detail><UPnPError><errorCode>701</errorCode><errorDescription>Transition not available</errorDescription></UPnPError></detail></s:Fault>`))
+	}))
+	defer srv.Close()
+
+	p := &TVPayload{
+		ControlURL: srv.URL,
+	}
+
+	err := p.SeekSoapCall("00:10:00")
+	if err == nil {
+		t.Fatal("expected SeekSoapCall to fail on SOAP fault status")
+	}
+
+	if !strings.Contains(err.Error(), "701") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestUpdateMRstate(t *testing.T) {
 	p := &TVPayload{
 		MediaRenderersStates:        make(map[string]*States),
