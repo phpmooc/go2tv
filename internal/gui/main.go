@@ -665,7 +665,8 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	deviceBottom := container.NewVBox(s.ActiveDeviceCard, s.rtmpURLCard)
 	deviceCard := widget.NewCard(lang.L("Devices"), "", container.NewBorder(deviceHeader, deviceBottom, nil, nil, list))
 
-	leftColumn := container.NewVBox(mediaCard, playCard, commonCard, advancedCard)
+	topCards := container.NewVBox(mediaCard, playCard, commonCard)
+	leftColumn := container.NewBorder(topCards, nil, nil, nil, advancedCard)
 	content := container.New(&RatioLayout{LeftRatio: 0.66}, leftColumn, deviceCard)
 
 	// Widgets actions

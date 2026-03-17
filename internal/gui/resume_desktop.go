@@ -168,6 +168,10 @@ func (s *resumeStore) save(entry resumeEntry) error {
 	return s.saveEntries(entries)
 }
 
+func (s *resumeStore) clear() error {
+	return s.saveEntries(nil)
+}
+
 func (s *resumeStore) prune(entries []resumeEntry) []resumeEntry {
 	if len(entries) == 0 {
 		return nil

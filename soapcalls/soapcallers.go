@@ -254,6 +254,16 @@ func shouldRetrySetAVTransportLegacyMetadata(statusCode int, body []byte) bool {
 		strings.Contains(bodyLower, "errorcode")
 }
 
+func shouldRetrySetAVTransportAfterStop(statusCode int, body []byte) bool {
+	if statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices {
+		return false
+	}
+
+	bodyLower := strings.ToLower(string(body))
+	return strings.Contains(bodyLower, "<errorcode>701</errorcode>") ||
+		strings.Contains(bodyLower, "transition not available")
+}
+
 func isHTTPSuccess(statusCode int) bool {
 	return statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices
 }
@@ -354,22 +364,21 @@ func (p *TVPayload) setAVTransportSoapCall() error {
 		return status, resBytes, lastErr
 	}
 
-	retryWithCompat := false
-	statusCode, resBytes, err := sendWithRetries(xmlData, "Standard", 2)
-	switch {
-	case err != nil:
-		retryWithCompat = true
-		p.Log().Debug().
-			Str("Method", "setAVTransportSoapCall").
-			Str("Action", "Legacy DIDL Metadata Retry").
-			Msg("Retrying after standard SetAVTransportURI failure")
-	case shouldRetrySetAVTransportLegacyMetadata(statusCode, resBytes):
-		retryWithCompat = true
-	case !isHTTPSuccess(statusCode):
-		return fmt.Errorf("setAVTransportSoapCall HTTP status %d", statusCode)
-	}
+	trySetAVTransport := func() (int, []byte, error) {
+		statusCode, resBytes, err := sendWithRetries(xmlData, "Standard", 2)
+		switch {
+		case err != nil:
+			p.Log().Debug().
+				Str("Method", "setAVTransportSoapCall").
+				Str("Action", "Legacy DIDL Metadata Retry").
+				Msg("Retrying after standard SetAVTransportURI failure")
+		case shouldRetrySetAVTransportLegacyMetadata(statusCode, resBytes):
+		case !isHTTPSuccess(statusCode):
+			return statusCode, resBytes, fmt.Errorf("setAVTransportSoapCall HTTP status %d", statusCode)
+		default:
+			return statusCode, resBytes, nil
+		}
 
-	if retryWithCompat {
 		p.Log().Debug().
 			Str("Method", "setAVTransportSoapCall").
 			Str("Action", "Legacy DIDL Metadata Retry").
@@ -378,23 +387,48 @@ func (p *TVPayload) setAVTransportSoapCall() error {
 		xmlDataCompat, buildErr := setAVTransportSoapBuildWithCompat(p, true)
 		if buildErr != nil {
 			p.Log().Error().Str("Method", "setAVTransportSoapCall").Str("Action", "setAVTransportSoapBuildWithCompat").Err(buildErr).Msg("")
-			return fmt.Errorf("setAVTransportSoapCall compat soap build error: %w", buildErr)
+			return statusCode, resBytes, fmt.Errorf("setAVTransportSoapCall compat soap build error: %w", buildErr)
 		}
 
-		compatStatusCode, _, compatErr := sendWithRetries(xmlDataCompat, "Compat", 2)
+		compatStatusCode, compatResBytes, compatErr := sendWithRetries(xmlDataCompat, "Compat", 2)
 		if compatErr != nil {
 			if err != nil {
-				return fmt.Errorf("setAVTransportSoapCall standard and compat failed: standard=%w, compat=%v", err, compatErr)
+				return compatStatusCode, compatResBytes, fmt.Errorf("setAVTransportSoapCall standard and compat failed: standard=%w, compat=%v", err, compatErr)
 			}
-			return compatErr
+			return compatStatusCode, compatResBytes, compatErr
 		}
 
 		if !isHTTPSuccess(compatStatusCode) {
 			if err != nil {
-				return fmt.Errorf("setAVTransportSoapCall standard and compat failed: standard=%w, compat status=%d", err, compatStatusCode)
+				return compatStatusCode, compatResBytes, fmt.Errorf("setAVTransportSoapCall standard and compat failed: standard=%w, compat status=%d", err, compatStatusCode)
 			}
-			return fmt.Errorf("setAVTransportSoapCall compat HTTP status %d", compatStatusCode)
+			return compatStatusCode, compatResBytes, fmt.Errorf("setAVTransportSoapCall compat HTTP status %d", compatStatusCode)
 		}
+
+		return compatStatusCode, compatResBytes, nil
+	}
+
+	statusCode, resBytes, err := trySetAVTransport()
+	if err == nil {
+		return nil
+	}
+
+	if !shouldRetrySetAVTransportAfterStop(statusCode, resBytes) {
+		return err
+	}
+
+	p.Log().Debug().
+		Str("Method", "setAVTransportSoapCall").
+		Str("Action", "Stop Before Retry").
+		Msg("Retrying SetAVTransportURI after Stop due to transition-not-available fault")
+
+	if stopErr := p.PlayPauseStopSoapCall("Stop"); stopErr != nil {
+		return fmt.Errorf("setAVTransportSoapCall stop before retry error: %w", stopErr)
+	}
+
+	_, _, err = trySetAVTransport()
+	if err != nil {
+		return err
 	}
 
 	return nil

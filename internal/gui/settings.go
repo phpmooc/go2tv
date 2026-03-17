@@ -69,14 +69,23 @@ func ffmpegDirDisplayPath(pref string) string {
 	return filepath.ToSlash(filepath.Dir(path))
 }
 
+func newSettingsField(label string, control fyne.CanvasObject) fyne.CanvasObject {
+	return container.NewVBox(
+		widget.NewLabel(label),
+		container.NewPadded(control),
+	)
+}
+
+func newSettingsCheckboxField(control fyne.CanvasObject) fyne.CanvasObject {
+	return container.NewPadded(control)
+}
+
 func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 
 	w := s.Current
 
-	themeText := widget.NewLabel(lang.L("Theme"))
 	dropdownTheme := widget.NewSelect([]string{lang.L("System Default"), lang.L("Light"), lang.L("Dark")}, parseTheme(s))
 
-	languageText := widget.NewLabel(lang.L("Language"))
 	dropdownLanguage := widget.NewSelect([]string{lang.L("System Default"), "English", "中文(简体)"}, parseLanguage(s))
 	selectedLanguage := fyne.CurrentApp().Preferences().StringWithFallback("Language", "System Default")
 
@@ -92,17 +101,30 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 
 	s.systemTheme = fyne.CurrentApp().Settings().ThemeVariant()
 
-	ffmpegText := widget.NewLabel("ffmpeg " + lang.L("Path"))
 	ffmpegTextEntry := widget.NewEntry()
 	var updatingFFmpegEntry bool
 
-	rememberPlaybackPositionText := widget.NewLabel(lang.L("Remember Playback Position"))
-	rememberPlaybackPositionCheck := widget.NewCheck("", func(enabled bool) {
+	rememberPlaybackPositionCheck := widget.NewCheck(lang.L("Remember Playback Position"), func(enabled bool) {
 		fyne.CurrentApp().Preferences().SetBool(rememberPlaybackPositionPref, enabled)
 	})
 	rememberPlaybackPositionCheck.SetChecked(
 		fyne.CurrentApp().Preferences().BoolWithFallback(rememberPlaybackPositionPref, false),
 	)
+	clearPlaybackHistoryButton := widget.NewButtonWithIcon(lang.L("Clear Playback History"), theme.DeleteIcon(), func() {
+		store := currentResumeStore()
+		if store == nil {
+			return
+		}
+
+		if err := store.clear(); err != nil {
+			fynedialog.ShowError(err, w)
+			return
+		}
+
+		s.clearResumeSession()
+		fynedialog.ShowInformation(lang.L("Playback History"), lang.L("Playback history cleared"), w)
+	})
+	rememberPlaybackPositionControls := container.NewGridWithColumns(2, rememberPlaybackPositionCheck, clearPlaybackHistoryButton)
 
 	ffmpegFolderReset := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		fyne.CurrentApp().Preferences().SetString("ffmpeg", "")
@@ -172,7 +194,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		s.ffmpegPathChanged = true
 	}
 
-	debugText := widget.NewLabel(lang.L("Debug"))
 	debugExport := widget.NewButton(lang.L("Export Debug Logs"), func() {
 		var itemInRing bool
 		s.Debug.ring.Do(func(p any) {
@@ -220,7 +241,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		fd.Resize(fyne.NewSize(filePickerFillSize, filePickerFillSize))
 	})
 
-	gaplessText := widget.NewLabel(lang.L("Gapless Playback"))
 	gaplessdropdown := widget.NewSelect([]string{lang.L("Enabled"), lang.L("Disabled")}, func(ss string) {
 		var selection string
 		if lang.L("Enabled") == ss {
@@ -264,8 +284,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 
 	dropdownTheme.Refresh()
 
-	sameTypeAutoNext := widget.NewLabel(lang.L("Auto-Play"))
-	sameTypeAutoNextCheck := widget.NewCheck(lang.L("Same File Types Only"), func(b bool) {
+	sameTypeAutoNextCheck := widget.NewCheck(lang.L("Only Auto-Play Same File Types"), func(b bool) {
 		fyne.CurrentApp().Preferences().SetBool("AutoPlaySameTypes", b)
 		s.SkinNextOnlySameTypes = b
 	})
@@ -273,7 +292,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	sameTypeAutoNextOption := fyne.CurrentApp().Preferences().BoolWithFallback("AutoPlaySameTypes", true)
 	sameTypeAutoNextCheck.SetChecked(sameTypeAutoNextOption)
 
-	imageAutoSkipText := widget.NewLabel(lang.L("Image Auto-Skip Timeout"))
 	imageAutoSkipCurrent := widget.NewLabel("")
 	imageAutoSkipSlider := widget.NewSlider(0, imageAutoSkipSecondsMax)
 	imageAutoSkipSlider.Step = 1
@@ -305,7 +323,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 
 	imageAutoSkipControls := container.NewBorder(nil, nil, nil, imageAutoSkipCurrent, imageAutoSkipSlider)
 
-	rtmpPortLabel := widget.NewLabel(lang.L("RTMP Port"))
 	rtmpPortEntry := newNumericalEntry()
 	rtmpPortEntry.Text = fyne.CurrentApp().Preferences().StringWithFallback("RTMPPort", "1935")
 	rtmpPortEntry.Validator = func(s string) error {
@@ -324,7 +341,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		}
 	}
 
-	rtmpKeyLabel := widget.NewLabel(lang.L("RTMP Stream Key"))
 	streamKeyEntry := widget.NewEntry()
 	streamKeyEntry.Password = true
 	streamKeyEntry.Text = fyne.CurrentApp().Preferences().StringWithFallback("RTMPStreamKey", "")
@@ -344,34 +360,48 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 
 	rtmpKeyContainer := container.NewBorder(nil, nil, nil, container.NewHBox(regenKeyBtn), streamKeyEntry)
 
-	generalSettings := container.New(layout.NewFormLayout(),
-		themeText, dropdownTheme,
-		languageText, dropdownLanguage,
-		ffmpegText, ffmpegPathControls,
-		rememberPlaybackPositionText, rememberPlaybackPositionCheck,
+	generalSettings := container.NewBorder(
+		container.NewVBox(
+			newSettingsField(lang.L("Theme"), dropdownTheme),
+			newSettingsField(lang.L("Language"), dropdownLanguage),
+			newSettingsField("ffmpeg "+lang.L("Path"), ffmpegPathControls),
+		),
+		nil,
+		nil,
+		nil,
+		newSettingsCheckboxField(rememberPlaybackPositionControls),
 	)
 
-	autoNextSettings := container.New(layout.NewFormLayout(),
-		gaplessText, gaplessdropdown,
-		sameTypeAutoNext, sameTypeAutoNextCheck,
-		imageAutoSkipText, imageAutoSkipControls,
+	autoNextSettings := container.NewVBox(
+		newSettingsField(lang.L("Gapless Playback"), gaplessdropdown),
+		newSettingsCheckboxField(sameTypeAutoNextCheck),
+		newSettingsField(lang.L("Image Auto-Skip Timeout"), imageAutoSkipControls),
 	)
 
-	rtmpSettings := container.New(layout.NewFormLayout(),
-		rtmpPortLabel, rtmpPortEntry,
-		rtmpKeyLabel, rtmpKeyContainer,
+	rtmpSettings := container.NewVBox(
+		newSettingsField(lang.L("RTMP Port"), rtmpPortEntry),
+		newSettingsField(lang.L("RTMP Stream Key"), rtmpKeyContainer),
 	)
 
-	debugSettings := container.New(layout.NewFormLayout(),
-		debugText, debugExport,
+	debugSettings := container.NewVBox(
+		newSettingsField(lang.L("Debug"), debugExport),
 	)
 
-	settingsCategories := container.NewVBox(
+	leftColumn := container.NewBorder(
 		widget.NewCard(lang.L("Common Options"), "", generalSettings),
-		widget.NewCard(lang.L("Auto-Play Next File"), "", autoNextSettings),
+		nil,
+		nil,
+		nil,
 		widget.NewCard(lang.L("RTMP Server"), "", rtmpSettings),
+	)
+	rightColumn := container.NewBorder(
+		widget.NewCard(lang.L("Auto-Play Next File"), "", autoNextSettings),
+		nil,
+		nil,
+		nil,
 		widget.NewCard(lang.L("Debug"), "", debugSettings),
 	)
+	settingsCategories := container.NewGridWithColumns(2, leftColumn, rightColumn)
 
 	return container.NewVScroll(settingsCategories)
 }

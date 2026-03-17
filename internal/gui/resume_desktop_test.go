@@ -222,6 +222,35 @@ func TestResumeStoreRemove(t *testing.T) {
 	}
 }
 
+func TestResumeStoreClear(t *testing.T) {
+	prefs := newFakeResumePrefs()
+	store := newResumeStore(prefs)
+
+	if err := store.save(resumeEntry{
+		MediaPath:           "/tmp/example.mp4",
+		Size:                1,
+		MTimeUnixNano:       2,
+		MediaKind:           "video",
+		LastPositionSeconds: 12,
+		UpdatedAtUnix:       3,
+	}); err != nil {
+		t.Fatalf("save failed: %v", err)
+	}
+
+	if err := store.clear(); err != nil {
+		t.Fatalf("clear failed: %v", err)
+	}
+
+	loaded, err := store.load()
+	if err != nil {
+		t.Fatalf("load failed: %v", err)
+	}
+
+	if len(loaded) != 0 {
+		t.Fatalf("expected empty store after clear, got %d entries", len(loaded))
+	}
+}
+
 func TestResumeEligibleForPlayback(t *testing.T) {
 	tests := []struct {
 		name       string
