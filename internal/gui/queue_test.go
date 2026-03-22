@@ -7,6 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 )
 
 func newTraversalTestScreen(t *testing.T, currentPath string) *FyneScreen {
@@ -130,5 +133,93 @@ func TestGetPreviousQueuedMediaSameTypeOnly(t *testing.T) {
 	}
 	if path != videoOne {
 		t.Fatalf("unexpected previous path: got %q want %q", path, videoOne)
+	}
+}
+
+func TestClearCurrentMediaSelectionPreservesQueue(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	screen := &FyneScreen{
+		State:              "Stopped",
+		mediafile:          "/tmp/test.mp4",
+		MediaText:          widget.NewEntry(),
+		SelectInternalSubs: widget.NewSelect(nil, nil),
+		PlayPause:          widget.NewButton("", nil),
+		SessionQueue: newSessionQueue([]QueueItem{
+			{Path: "/tmp/test.mp4", BaseName: "test.mp4", ParentFolder: "/tmp", MediaType: "video"},
+		}, 0),
+	}
+
+	screen.MediaText.SetText("test.mp4")
+	clearCurrentMediaSelection(screen)
+
+	if screen.SessionQueue == nil {
+		t.Fatalf("expected queue to remain after media clear")
+	}
+	if screen.mediafile != "" {
+		t.Fatalf("expected mediafile to be cleared, got %q", screen.mediafile)
+	}
+}
+
+func TestQueueInteractionsLocked(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	screen := &FyneScreen{
+		ExternalMediaURL: widget.NewCheck("", nil),
+		rtmpServerCheck:  widget.NewCheck("", nil),
+	}
+
+	if screen.queueInteractionsLocked() {
+		t.Fatalf("expected queue to be unlocked initially")
+	}
+
+	screen.ExternalMediaURL.SetChecked(true)
+	if !screen.queueInteractionsLocked() {
+		t.Fatalf("expected queue lock for external media mode")
+	}
+
+	screen.ExternalMediaURL.SetChecked(false)
+	screen.rtmpServerCheck.SetChecked(true)
+	if !screen.queueInteractionsLocked() {
+		t.Fatalf("expected queue lock for RTMP mode")
+	}
+
+	screen.rtmpServerCheck.SetChecked(false)
+	screen.Screencast = true
+	if !screen.queueInteractionsLocked() {
+		t.Fatalf("expected queue lock for screencast mode")
+	}
+}
+
+func TestDroppedMediaBlockedError(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	screen := &FyneScreen{
+		ExternalMediaURL: widget.NewCheck("", nil),
+		rtmpServerCheck:  widget.NewCheck("", nil),
+	}
+
+	if err := screen.droppedMediaBlockedError(); err != nil {
+		t.Fatalf("unexpected drop block without live mode: %v", err)
+	}
+
+	screen.ExternalMediaURL.SetChecked(true)
+	if err := screen.droppedMediaBlockedError(); err != nil {
+		t.Fatalf("external URL mode should allow dropping files, got %v", err)
+	}
+
+	screen.ExternalMediaURL.SetChecked(false)
+	screen.rtmpServerCheck.SetChecked(true)
+	if err := screen.droppedMediaBlockedError(); err == nil {
+		t.Fatalf("expected drop block while RTMP mode is active")
+	}
+
+	screen.rtmpServerCheck.SetChecked(false)
+	screen.Screencast = true
+	if err := screen.droppedMediaBlockedError(); err == nil {
+		t.Fatalf("expected drop block while screencast mode is active")
 	}
 }

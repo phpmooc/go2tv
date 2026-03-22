@@ -293,6 +293,38 @@ func setCurrentMediaPath(screen *FyneScreen, mediaPath string) error {
 	return nil
 }
 
+func clearCurrentMediaSelection(screen *FyneScreen) {
+	if screen.MediaText != nil {
+		screen.MediaText.SetText("")
+	}
+	screen.mediafile = ""
+	setInternalSubsDropdownNoSubs(screen)
+	screen.refreshQueueStateUI()
+	setPlayPauseView("", screen)
+}
+
+func restoreMediaInputState(screen *FyneScreen, mediaPath, mediaText string) {
+	if screen.ExternalMediaURL != nil && screen.ExternalMediaURL.Checked {
+		if screen.MediaText != nil {
+			screen.MediaText.SetText(mediaText)
+		}
+		screen.mediafile = mediaPath
+		setInternalSubsDropdownNoSubs(screen)
+		screen.refreshQueueStateUI()
+		setPlayPauseView("", screen)
+		return
+	}
+
+	if mediaPath == "" {
+		clearCurrentMediaSelection(screen)
+		return
+	}
+
+	if err := setCurrentMediaPath(screen, mediaPath); err != nil {
+		check(screen, err)
+	}
+}
+
 func openMediaPicker(screen *FyneScreen, onPaths func(*FyneScreen, []string) error) {
 	openMediaPickerForWindow(screen, screen.Current, onPaths, nil)
 }
@@ -1644,12 +1676,7 @@ out:
 }
 
 func clearmediaAction(screen *FyneScreen) {
-	screen.replaceSessionQueue(nil, -1)
-	screen.MediaText.SetText("")
-	screen.mediafile = ""
-	setInternalSubsDropdownNoSubs(screen)
-	screen.refreshQueueStateUI()
-	setPlayPauseView("", screen)
+	clearCurrentMediaSelection(screen)
 }
 
 func clearsubsAction(screen *FyneScreen) {
@@ -2351,12 +2378,9 @@ func resetRTMPUI(screen *FyneScreen) {
 	screen.rtmpURLEntry.SetText("")
 	screen.rtmpKeyEntry.SetText("")
 
-	screen.rtmpURLCard.Hide()
-	screen.rtmpURLEntry.SetText("")
-	screen.rtmpKeyEntry.SetText("")
-
-	screen.MediaText.SetText(screen.rtmpPrevMediaText)
-	screen.mediafile = screen.rtmpPrevMediaFile
+	if screen.rtmpPrevExternalMediaURL {
+		restoreMediaInputState(screen, screen.rtmpPrevMediaFile, screen.rtmpPrevMediaText)
+	}
 	if screen.LoopSelectedCheck != nil {
 		screen.LoopSelectedCheck.SetChecked(screen.rtmpPrevLoop)
 		if !screen.ExternalMediaURL.Checked && (screen.NextMediaCheck == nil || !screen.NextMediaCheck.Checked) {
@@ -2367,7 +2391,6 @@ func resetRTMPUI(screen *FyneScreen) {
 	}
 
 	screen.updateFFmpegDependentCheckTooltips()
-	setPlayPauseView("", screen)
 }
 
 func waitForRTMPStream(screen *FyneScreen) error {

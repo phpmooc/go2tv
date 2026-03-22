@@ -811,8 +811,9 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 			clearmedia.Enable()
 			s.SlideBar.Enable()
 			s.MediaText.SetPlaceHolder("")
-			s.MediaText.SetText(s.screencastPrevMediaText)
-			s.mediafile = s.screencastPrevMediaFile
+			if s.screencastPrevExternal {
+				restoreMediaInputState(s, s.screencastPrevMediaFile, s.screencastPrevMediaText)
+			}
 			if s.rtmpServerCheck != nil {
 				s.rtmpServerCheck.Enable()
 			}
@@ -848,7 +849,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 			mediafilelabel.Refresh()
 
 			// Clear the Media Text Area
-			clearmediaAction(s)
+			clearCurrentMediaSelection(s)
 
 			// Set some Media text defaults
 			// to indicate that we're expecting a URL
@@ -870,18 +871,9 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		previewmedia.Enable()
 		mediafilelabel.Text = lang.L("Media File") + ":"
 		s.MediaText.SetPlaceHolder("")
-		s.MediaText.Text = mediafileOldText
-		s.mediafile = mediafileOld
 		mediafilelabel.Refresh()
 		s.MediaText.Disable()
-
-		if mediafileOld != "" {
-			if !refreshInternalSubsDropdown(s, mediafileOld) {
-				return
-			}
-		}
-		s.refreshTraversalControls()
-		setPlayPauseView("", s)
+		restoreMediaInputState(s, mediafileOld, mediafileOldText)
 	}
 
 	medialoop.OnChanged = func(b bool) {

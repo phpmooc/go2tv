@@ -278,12 +278,19 @@ func (screen *FyneScreen) queueButtonText(queue *SessionQueue) string {
 	return fmt.Sprintf(lang.L("Queue %d"), len(queue.Items))
 }
 
+func (screen *FyneScreen) queueInteractionsLocked() bool {
+	return screen.Screencast ||
+		(screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked) ||
+		(screen.ExternalMediaURL != nil && screen.ExternalMediaURL.Checked)
+}
+
 func (screen *FyneScreen) refreshQueueStateUI() {
 	queue, selectedIndex := screen.queueSnapshot()
 	statusText := ""
 	buttonText := screen.queueButtonText(queue)
 	buttonImportance := widget.DangerImportance
 	detailsText := lang.L("No item selected")
+	locked := screen.queueInteractionsLocked()
 
 	if queue != nil && selectedIndex >= 0 && selectedIndex < len(queue.Items) {
 		detailsText = queue.Items[selectedIndex].Path
@@ -331,8 +338,16 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		currentSelected := queue != nil && selectedIndex >= 0 && selectedIndex < len(queue.Items)
 		currentIsActive := currentSelected && queue.CurrentIndex == selectedIndex
 
+		if screen.queueAddButton != nil {
+			if !locked {
+				screen.queueAddButton.Enable()
+			} else {
+				screen.queueAddButton.Disable()
+			}
+		}
+
 		if screen.queuePlayNowButton != nil {
-			if currentSelected {
+			if currentSelected && !locked {
 				screen.queuePlayNowButton.Enable()
 			} else {
 				screen.queuePlayNowButton.Disable()
@@ -340,7 +355,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		}
 
 		if screen.queueRemoveButton != nil {
-			if currentSelected && !currentIsActive {
+			if currentSelected && !currentIsActive && !locked {
 				screen.queueRemoveButton.Enable()
 			} else {
 				screen.queueRemoveButton.Disable()
@@ -348,7 +363,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		}
 
 		if screen.queueMoveUpButton != nil {
-			if currentSelected && selectedIndex > 0 {
+			if currentSelected && selectedIndex > 0 && !locked {
 				screen.queueMoveUpButton.Enable()
 			} else {
 				screen.queueMoveUpButton.Disable()
@@ -356,7 +371,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		}
 
 		if screen.queueMoveDownButton != nil {
-			if currentSelected && queue != nil && selectedIndex < len(queue.Items)-1 {
+			if currentSelected && queue != nil && selectedIndex < len(queue.Items)-1 && !locked {
 				screen.queueMoveDownButton.Enable()
 			} else {
 				screen.queueMoveDownButton.Disable()
@@ -364,7 +379,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		}
 
 		if screen.queueClearButton != nil {
-			if queue != nil && len(queue.Items) > 0 {
+			if queue != nil && len(queue.Items) > 0 && !locked {
 				screen.queueClearButton.Enable()
 			} else {
 				screen.queueClearButton.Disable()
@@ -509,6 +524,7 @@ func (screen *FyneScreen) buildQueueWindow() {
 		screen.queueList = nil
 		screen.queueHeader = nil
 		screen.queueDetails = nil
+		screen.queueAddButton = nil
 		screen.queuePlayNowButton = nil
 		screen.queueRemoveButton = nil
 		screen.queueMoveUpButton = nil
@@ -526,6 +542,7 @@ func (screen *FyneScreen) buildQueueWindow() {
 	screen.queueList = list
 	screen.queueHeader = header
 	screen.queueDetails = details
+	screen.queueAddButton = addFiles
 	screen.queuePlayNowButton = selectItem
 	screen.queueRemoveButton = remove
 	screen.queueMoveUpButton = moveUp
@@ -534,6 +551,10 @@ func (screen *FyneScreen) buildQueueWindow() {
 }
 
 func (screen *FyneScreen) activateSelectedQueueItem() {
+	if screen.queueInteractionsLocked() {
+		return
+	}
+
 	queue, selectedIndex := screen.queueSnapshot()
 	if queue == nil || selectedIndex < 0 || selectedIndex >= len(queue.Items) {
 		return

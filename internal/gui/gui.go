@@ -122,6 +122,7 @@ type FyneScreen struct {
 	queueList                *widget.List
 	queueHeader              *widget.Label
 	queueDetails             *widget.Label
+	queueAddButton           *widget.Button
 	queuePlayNowButton       *widget.Button
 	queueRemoveButton        *widget.Button
 	queueMoveUpButton        *widget.Button
@@ -765,10 +766,6 @@ func NewFyneScreen(version string) *FyneScreen {
 
 func onDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
 	return func(p fyne.Position, u []fyne.URI) {
-		if screen.Screencast {
-			return
-		}
-
 		var mfiles, sfiles []fyne.URI
 
 	out:
@@ -792,11 +789,30 @@ func onDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
 		}
 
 		if len(mfiles) > 0 {
+			if err := screen.droppedMediaBlockedError(); err != nil {
+				check(screen, err)
+				return
+			}
+
 			paths := make([]string, 0, len(mfiles))
 			for _, mediaURI := range mfiles {
 				paths = append(paths, mediaURI.Path())
 			}
-			check(screen, selectMediaPaths(screen, paths))
+
+			go func() {
+				check(screen, selectMediaPaths(screen, paths))
+			}()
 		}
+	}
+}
+
+func (screen *FyneScreen) droppedMediaBlockedError() error {
+	switch {
+	case screen.Screencast:
+		return errors.New(lang.L("disable Cast Desktop before dropping files"))
+	case screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked:
+		return errors.New(lang.L("disable RTMP server before dropping files"))
+	default:
+		return nil
 	}
 }
