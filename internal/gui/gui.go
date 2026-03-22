@@ -622,6 +622,14 @@ func (p *FyneScreen) currentChromecastActionID() uint64 {
 	return p.chromecastActionID
 }
 
+func normalizeChromecastWatcherContext(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+
+	return context.Background()
+}
+
 // checkChromecastCompatibility checks if loaded media needs transcoding for Chromecast.
 // Auto-enables transcode checkbox if media is incompatible and FFmpeg is available.
 // Only auto-enables once per file - tracks checked file to respect user's manual disable.

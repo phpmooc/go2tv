@@ -1733,8 +1733,6 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 	// For Chromecast: reuse existing connection for faster skip
 	if screen.selectedDeviceType == devices.DeviceTypeChromecast &&
 		screen.chromecastClient != nil && screen.chromecastClient.IsConnected() {
-		actionID := screen.currentChromecastActionID()
-
 		// Get media type
 		mediaType, err := utils.GetMimeDetailsFromPath(screen.mediafile)
 		if err != nil {
@@ -1742,10 +1740,13 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			return
 		}
 
+		actionID := screen.nextChromecastActionID()
+
 		go func() {
 			// Determine if transcoding is enabled
 			transcode := screen.Transcode
 			ffmpegSeek := 0
+			var serverStoppedCTX context.Context
 
 			// Chromecast handles images and audio natively - never transcode these
 			mediaTypeSlice := strings.Split(mediaType, "/")
@@ -1768,7 +1769,6 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 
 			var mediaURL string
 			var subtitleURL string
-			var serverStoppedCTX context.Context
 
 			if transcode {
 				// TRANSCODING PATH: Stop server and restart with new file and transcode options
@@ -1857,34 +1857,27 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 
 			// Set state to Waiting to ensure status watcher triggers UI update when playing starts
 			screen.updateScreenState("Waiting")
+			serverStoppedCTX = normalizeChromecastWatcherContext(serverStoppedCTX)
 
-			// Load new media on the active receiver (async to avoid blocking).
-			// live=false for skip-next (local files don't need LIVE stream type)
 			client := screen.chromecastClient
-			go func() {
-				if client == nil || !client.IsConnected() {
-					return
-				}
-				if err := client.LoadOnExisting(mediaURL, mediaType, ffmpegSeek, screen.mediaDuration, subtitleURL, false); err != nil {
-					if !screen.isChromecastActionCurrent(actionID) {
-						return
-					}
-					check(screen, fmt.Errorf("chromecast load: %w", err))
-					startAfreshPlayButton(screen)
-					return
-				}
+			if client == nil || !client.IsConnected() {
+				return
+			}
+			if err := client.LoadOnExisting(mediaURL, mediaType, ffmpegSeek, screen.mediaDuration, subtitleURL, false); err != nil {
 				if !screen.isChromecastActionCurrent(actionID) {
 					return
 				}
-				screen.updateScreenState("Playing")
-				setPlayPauseView("Pause", screen)
-				armChromecastImageAutoSkipAfterReady(screen, client, actionID, mediaType, screen.mediafile)
-			}()
-
-			// Restart status watcher if transcoding (server was restarted)
-			if transcode && serverStoppedCTX != nil {
-				go chromecastStatusWatcher(serverStoppedCTX, screen, screen.nextChromecastActionID())
+				check(screen, fmt.Errorf("chromecast load: %w", err))
+				startAfreshPlayButton(screen)
+				return
 			}
+			if !screen.isChromecastActionCurrent(actionID) {
+				return
+			}
+			screen.updateScreenState("Playing")
+			setPlayPauseView("Pause", screen)
+			armChromecastImageAutoSkipAfterReady(screen, client, actionID, mediaType, screen.mediafile)
+			go chromecastStatusWatcher(serverStoppedCTX, screen, actionID)
 
 		}()
 		return
