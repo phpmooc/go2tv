@@ -196,11 +196,7 @@ func selectMediaPaths(screen *FyneScreen, paths []string) error {
 		return errors.New(lang.L("please select a media file"))
 	}
 
-	if len(items) > 1 {
-		screen.replaceSessionQueue(items, 0)
-	} else {
-		screen.replaceSessionQueue(nil, -1)
-	}
+	screen.replaceSessionQueue(items, 0)
 
 	return setCurrentMediaPath(screen, items[0].Path)
 }
@@ -242,15 +238,12 @@ func appendMediaPaths(screen *FyneScreen, paths []string) error {
 		return errors.New(lang.L("please select a media file"))
 	}
 
-	if queue != nil || len(combined) > 1 {
-		screen.replaceSessionQueue(combined, currentIndex)
-		if screen.mediafile == "" {
-			return setCurrentMediaPath(screen, combined[0].Path)
-		}
-		return nil
+	screen.replaceSessionQueue(combined, currentIndex)
+	if screen.mediafile == "" {
+		return setCurrentMediaPath(screen, combined[0].Path)
 	}
 
-	return setCurrentMediaPath(screen, combined[0].Path)
+	return nil
 }
 
 func setCurrentMediaPath(screen *FyneScreen, mediaPath string) error {
@@ -298,6 +291,7 @@ func clearCurrentMediaSelection(screen *FyneScreen) {
 		screen.MediaText.SetText("")
 	}
 	screen.mediafile = ""
+	screen.clearQueueCurrent()
 	setInternalSubsDropdownNoSubs(screen)
 	screen.refreshQueueStateUI()
 	setPlayPauseView("", screen)

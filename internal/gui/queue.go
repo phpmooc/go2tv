@@ -44,7 +44,7 @@ func newSessionQueue(items []QueueItem, currentIndex int) *SessionQueue {
 	cloned := make([]QueueItem, len(items))
 	copy(cloned, items)
 
-	if currentIndex < 0 || currentIndex >= len(cloned) {
+	if currentIndex < -1 || currentIndex >= len(cloned) {
 		currentIndex = 0
 	}
 
@@ -250,6 +250,17 @@ func (screen *FyneScreen) syncQueueCurrentWithMedia(mediaPath string) {
 	}
 }
 
+func (screen *FyneScreen) clearQueueCurrent() {
+	screen.mu.Lock()
+	defer screen.mu.Unlock()
+
+	if screen.SessionQueue == nil {
+		return
+	}
+
+	screen.SessionQueue.CurrentIndex = -1
+}
+
 func (screen *FyneScreen) setQueueSelectedIndex(index int) {
 	screen.mu.Lock()
 	screen.queueSelectedIndex = index
@@ -307,7 +318,9 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 	if queue != nil && len(queue.Items) > 0 {
 		statusText = screen.queueStatusText(queue, activeIndex)
 		buttonText = statusText
-		buttonImportance = widget.SuccessImportance
+		if len(queue.Items) > 1 {
+			buttonImportance = widget.SuccessImportance
+		}
 	}
 
 	fyne.Do(func() {
@@ -627,21 +640,28 @@ func (screen *FyneScreen) removeSelectedQueueItem() {
 		return
 	}
 
-	if screen.queueSelectedIndex == screen.SessionQueue.CurrentIndex {
+	selectedIndex := screen.queueSelectedIndex
+	selectedItem := screen.SessionQueue.Items[selectedIndex]
+	currentIsActive := screen.mediafile != "" && selectedItem.Path == screen.mediafile
+	if currentIsActive && len(screen.SessionQueue.Items) > 1 {
 		screen.mu.Unlock()
 		check(screen, fmt.Errorf("%s", lang.L("cannot remove the current queue item")))
 		return
 	}
 
 	screen.SessionQueue.Items = append(
-		screen.SessionQueue.Items[:screen.queueSelectedIndex],
-		screen.SessionQueue.Items[screen.queueSelectedIndex+1:]...,
+		screen.SessionQueue.Items[:selectedIndex],
+		screen.SessionQueue.Items[selectedIndex+1:]...,
 	)
 
 	if len(screen.SessionQueue.Items) == 0 {
 		screen.SessionQueue = nil
 		screen.queueSelectedIndex = -1
 		screen.mu.Unlock()
+		if currentIsActive {
+			clearCurrentMediaSelection(screen)
+			return
+		}
 		screen.refreshQueueStateUI()
 		return
 	}
@@ -649,8 +669,10 @@ func (screen *FyneScreen) removeSelectedQueueItem() {
 	if screen.queueSelectedIndex >= len(screen.SessionQueue.Items) {
 		screen.queueSelectedIndex = len(screen.SessionQueue.Items) - 1
 	}
-	if screen.SessionQueue.CurrentIndex > screen.queueSelectedIndex {
-		screen.SessionQueue.CurrentIndex--
+	if screen.mediafile == "" {
+		screen.SessionQueue.CurrentIndex = -1
+	} else if currentIndex := screen.SessionQueue.indexByPath(screen.mediafile); currentIndex != -1 {
+		screen.SessionQueue.CurrentIndex = currentIndex
 	}
 	screen.mu.Unlock()
 
@@ -672,6 +694,7 @@ func (screen *FyneScreen) moveSelectedQueueItem(delta int) {
 
 func (screen *FyneScreen) clearSessionQueueAction() {
 	screen.replaceSessionQueue(nil, -1)
+	clearCurrentMediaSelection(screen)
 }
 
 type queueRow struct {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 	"fyne.io/fyne/v2/widget"
 )
@@ -157,8 +158,46 @@ func TestClearCurrentMediaSelectionPreservesQueue(t *testing.T) {
 	if screen.SessionQueue == nil {
 		t.Fatalf("expected queue to remain after media clear")
 	}
+	if screen.SessionQueue.CurrentIndex != -1 {
+		t.Fatalf("expected queue current index to be cleared, got %d", screen.SessionQueue.CurrentIndex)
+	}
 	if screen.mediafile != "" {
 		t.Fatalf("expected mediafile to be cleared, got %q", screen.mediafile)
+	}
+}
+
+func TestSelectMediaPathsSingleFileCreatesQueue(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dir := t.TempDir()
+	mediaPath := filepath.Join(dir, "single.mp4")
+	screen := &FyneScreen{
+		mediaFormats:       []string{".mp4"},
+		videoFormats:       []string{".mp4"},
+		MediaText:          widget.NewEntry(),
+		SubsText:           widget.NewEntry(),
+		SelectInternalSubs: widget.NewSelect(nil, nil),
+		CustomSubsCheck:    widget.NewCheck("", nil),
+		PlayPause:          widget.NewButton("", nil),
+	}
+
+	if err := selectMediaPaths(screen, []string{mediaPath}); err != nil {
+		t.Fatalf("selectMediaPaths failed: %v", err)
+	}
+	fyne.DoAndWait(func() {})
+
+	if screen.SessionQueue == nil {
+		t.Fatalf("expected single media selection to create queue")
+	}
+	if len(screen.SessionQueue.Items) != 1 {
+		t.Fatalf("expected single queue item, got %d", len(screen.SessionQueue.Items))
+	}
+	if screen.SessionQueue.CurrentIndex != 0 {
+		t.Fatalf("expected current queue index 0, got %d", screen.SessionQueue.CurrentIndex)
+	}
+	if screen.mediafile != mediaPath {
+		t.Fatalf("expected mediafile %q, got %q", mediaPath, screen.mediafile)
 	}
 }
 
@@ -277,5 +316,101 @@ func TestDroppedMediaBlockedErrorForAppendMode(t *testing.T) {
 
 	if err := screen.droppedMediaBlockedErrorForMode(droppedMediaModeReplace); err != nil {
 		t.Fatalf("replace mode should still allow dropping files, got %v", err)
+	}
+}
+
+func TestRemoveSelectedQueueItemClearsCurrentWhenLastItemRemoved(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	mediaPath := "/tmp/test.mp4"
+	screen := &FyneScreen{
+		mediafile:          mediaPath,
+		queueSelectedIndex: 0,
+		MediaText:          widget.NewEntry(),
+		SelectInternalSubs: widget.NewSelect(nil, nil),
+		CustomSubsCheck:    widget.NewCheck("", nil),
+		PlayPause:          widget.NewButton("", nil),
+		SessionQueue: newSessionQueue([]QueueItem{
+			{Path: mediaPath, BaseName: "test.mp4", ParentFolder: "/tmp", MediaType: "video"},
+		}, 0),
+	}
+
+	screen.removeSelectedQueueItem()
+
+	if screen.SessionQueue != nil {
+		t.Fatalf("expected queue to be cleared after removing last item")
+	}
+	if screen.mediafile != "" {
+		t.Fatalf("expected media selection to be cleared, got %q", screen.mediafile)
+	}
+}
+
+func TestClearSessionQueueActionClearsCurrentMedia(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	mediaPath := "/tmp/test.mp4"
+	screen := &FyneScreen{
+		mediafile:          mediaPath,
+		MediaText:          widget.NewEntry(),
+		SelectInternalSubs: widget.NewSelect(nil, nil),
+		CustomSubsCheck:    widget.NewCheck("", nil),
+		PlayPause:          widget.NewButton("", nil),
+		SessionQueue: newSessionQueue([]QueueItem{
+			{Path: mediaPath, BaseName: "test.mp4", ParentFolder: "/tmp", MediaType: "video"},
+		}, 0),
+	}
+
+	screen.clearSessionQueueAction()
+
+	if screen.SessionQueue != nil {
+		t.Fatalf("expected queue to be cleared")
+	}
+	if screen.mediafile != "" {
+		t.Fatalf("expected media selection to be cleared, got %q", screen.mediafile)
+	}
+}
+
+func TestSingleItemQueueButtonRemainsRed(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	mediaPath := "/tmp/test.mp4"
+	screen := &FyneScreen{
+		mediafile:   mediaPath,
+		QueueButton: widget.NewButton("", nil),
+		SessionQueue: newSessionQueue([]QueueItem{
+			{Path: mediaPath, BaseName: "test.mp4", ParentFolder: "/tmp", MediaType: "video"},
+		}, 0),
+	}
+
+	screen.refreshQueueStateUI()
+	fyne.DoAndWait(func() {})
+
+	if screen.QueueButton.Importance != widget.DangerImportance {
+		t.Fatalf("expected single-item queue button to stay red, got %v", screen.QueueButton.Importance)
+	}
+}
+
+func TestMultiItemQueueButtonTurnsGreen(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	mediaPath := "/tmp/one.mp4"
+	screen := &FyneScreen{
+		mediafile:   mediaPath,
+		QueueButton: widget.NewButton("", nil),
+		SessionQueue: newSessionQueue([]QueueItem{
+			{Path: mediaPath, BaseName: "one.mp4", ParentFolder: "/tmp", MediaType: "video"},
+			{Path: "/tmp/two.mp4", BaseName: "two.mp4", ParentFolder: "/tmp", MediaType: "video"},
+		}, 0),
+	}
+
+	screen.refreshQueueStateUI()
+	fyne.DoAndWait(func() {})
+
+	if screen.QueueButton.Importance != widget.SuccessImportance {
+		t.Fatalf("expected multi-item queue button to turn green, got %v", screen.QueueButton.Importance)
 	}
 }
