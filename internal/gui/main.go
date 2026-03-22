@@ -515,11 +515,10 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	skipNext.Importance = widget.LowImportance
 	skipNext.Alignment = widget.ButtonAlignCenter
 
-	queueButton := widget.NewButton(lang.L("Queue"), func() {
+	queueButton := widget.NewButton(lang.L("Playlist"), func() {
 		s.openQueueWindow()
 	})
-	queueButton.Importance = widget.DangerImportance
-	queueButtonThemeOverride := container.NewThemeOverride(queueButton, queueButtonTheme{})
+	queueButton.Importance = widget.MediumImportance
 	sliderBar := newTappableSlider(s)
 
 	// previewmedia spawns external applications.
@@ -655,7 +654,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		playpause,
 		stop,
 		skipNext,
-		queueButtonThemeOverride,
+		queueButton,
 		layout.NewSpacer(),
 		volumedown,
 		muteunmute,

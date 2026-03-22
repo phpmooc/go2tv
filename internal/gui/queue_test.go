@@ -405,7 +405,7 @@ func TestClearSessionQueueActionClearsCurrentMedia(t *testing.T) {
 	}
 }
 
-func TestSingleItemQueueButtonRemainsRed(t *testing.T) {
+func TestSingleItemPlaylistButtonStaysNeutral(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
@@ -421,12 +421,12 @@ func TestSingleItemQueueButtonRemainsRed(t *testing.T) {
 	screen.refreshQueueStateUI()
 	fyne.DoAndWait(func() {})
 
-	if screen.QueueButton.Importance != widget.DangerImportance {
-		t.Fatalf("expected single-item queue button to stay red, got %v", screen.QueueButton.Importance)
+	if screen.QueueButton.Importance != widget.MediumImportance {
+		t.Fatalf("expected single-item playlist button to stay neutral, got %v", screen.QueueButton.Importance)
 	}
 }
 
-func TestMultiItemQueueButtonTurnsGreen(t *testing.T) {
+func TestMultiItemPlaylistButtonTurnsProminent(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
@@ -443,7 +443,7 @@ func TestMultiItemQueueButtonTurnsGreen(t *testing.T) {
 	screen.refreshQueueStateUI()
 	fyne.DoAndWait(func() {})
 
-	if screen.QueueButton.Importance != widget.SuccessImportance {
-		t.Fatalf("expected multi-item queue button to turn green, got %v", screen.QueueButton.Importance)
+	if screen.QueueButton.Importance != widget.HighImportance {
+		t.Fatalf("expected multi-item playlist button to become prominent, got %v", screen.QueueButton.Importance)
 	}
 }

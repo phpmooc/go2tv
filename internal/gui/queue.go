@@ -302,22 +302,22 @@ func (screen *FyneScreen) activeQueueIndex(queue *SessionQueue) int {
 
 func (screen *FyneScreen) queueStatusText(queue *SessionQueue, activeIndex int) string {
 	if activeIndex >= 0 && activeIndex < len(queue.Items) {
-		return fmt.Sprintf(lang.L("Queue %d/%d"), activeIndex+1, len(queue.Items))
+		return fmt.Sprintf(lang.L("Playlist %d/%d"), activeIndex+1, len(queue.Items))
 	}
 
-	return fmt.Sprintf(lang.L("Queue: %d items"), len(queue.Items))
+	return fmt.Sprintf(lang.L("Playlist: %d items"), len(queue.Items))
 }
 
 func (screen *FyneScreen) queueButtonText(queue *SessionQueue, activeIndex int) string {
 	if queue == nil || len(queue.Items) == 0 {
-		return lang.L("Queue")
+		return lang.L("Playlist")
 	}
 
 	if activeIndex >= 0 && activeIndex < len(queue.Items) {
-		return fmt.Sprintf(lang.L("Queue %d/%d"), activeIndex+1, len(queue.Items))
+		return fmt.Sprintf(lang.L("Playlist %d/%d"), activeIndex+1, len(queue.Items))
 	}
 
-	return fmt.Sprintf(lang.L("Queue %d"), len(queue.Items))
+	return fmt.Sprintf(lang.L("Playlist %d"), len(queue.Items))
 }
 
 func (screen *FyneScreen) queueInteractionsLocked() bool {
@@ -331,7 +331,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 	activeIndex := screen.activeQueueIndex(queue)
 	statusText := ""
 	buttonText := screen.queueButtonText(queue, activeIndex)
-	buttonImportance := widget.DangerImportance
+	buttonImportance := widget.MediumImportance
 	detailsText := lang.L("No item selected")
 	locked := screen.queueInteractionsLocked()
 
@@ -342,7 +342,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		statusText = screen.queueStatusText(queue, activeIndex)
 		buttonText = statusText
 		if len(queue.Items) > 1 {
-			buttonImportance = widget.SuccessImportance
+			buttonImportance = widget.HighImportance
 		}
 	}
 
@@ -355,7 +355,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 
 		if screen.queueHeader != nil {
 			if queue == nil || len(queue.Items) == 0 {
-				screen.queueHeader.SetText(lang.L("Queue is empty"))
+				screen.queueHeader.SetText(lang.L("Playlist is empty"))
 			} else {
 				screen.queueHeader.SetText(statusText)
 			}
@@ -498,7 +498,7 @@ func onQueueDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
 }
 
 func (screen *FyneScreen) buildQueueWindow() {
-	win := fyne.CurrentApp().NewWindow(lang.L("Queue"))
+	win := fyne.CurrentApp().NewWindow(lang.L("Playlist"))
 	win.SetOnDropped(onQueueDropFiles(screen))
 	header := widget.NewLabel("")
 	details := widget.NewLabel(lang.L("No item selected"))
@@ -554,7 +554,7 @@ func (screen *FyneScreen) buildQueueWindow() {
 	moveDown := widget.NewButtonWithIcon("", theme.MoveDownIcon(), func() {
 		screen.moveSelectedQueueItem(1)
 	})
-	clearQueue := widget.NewButton(lang.L("Clear queue"), func() {
+	clearQueue := widget.NewButton(lang.L("Clear playlist"), func() {
 		screen.clearSessionQueueAction()
 	})
 	closeButton := widget.NewButton(lang.L("Close"), func() {

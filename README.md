@@ -72,6 +72,21 @@ When transcoding is enabled, Go2TV probes available GPU H.264 encoders first and
 
 ---
 
+## Playlist (GUI)
+
+Go2TV GUI keeps the current selection in a **Playlist**, even for a single file.
+
+- Selecting or dropping a single local file creates a 1-item playlist
+- Selecting or dropping multiple files creates a multi-item playlist
+- The **Playlist** window lets you add, remove, reorder, and select items
+- Drag and drop on the main window replaces the current playlist
+- Drag and drop on the Playlist window appends files when a playlist already exists
+- **Next**, **Previous**, and **Auto-Play Next File** follow the playlist order
+- **Auto-Play Next File** wraps to the start of the playlist when it reaches the end
+- **Same File Types Only** is still respected for auto-play traversal
+
+---
+
 ## RTMP Streaming (Chromecast only)
 
 Go2TV can act as an RTMP server, allowing you to stream from OBS or other software directly to your Chromecast. **This feature requires FFmpeg.**
@@ -158,7 +173,8 @@ yt-dlp -o - "https://youtu.be/..." | go2tv -tc -t http://192.168.1.50:8009
 - **Transcoding** - Converts incompatible video formats on-the-fly (requires FFmpeg)
 - **Subtitles** - Supports external SRT/VTT files and embedded MKV subtitles
 - **Seek support** - Jump to any position in the video
-- **Loop and auto-play** - Loop a single file or auto-play the next file in folder
+- **Playlist playback** - Single-file and multi-file playlists with add/remove/reorder/select support
+- **Loop and auto-play** - Loop the current file or auto-play through the playlist
 - **Gapless playback** - Supported for DLNA devices
 - **RTMP Server** - Cast live streams from OBS directly to Chromecast (requires FFmpeg)
 - **Cast Desktop (experimental)** - Cast desktop as live stream to Chromecast (requires FFmpeg)
