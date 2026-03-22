@@ -1858,14 +1858,14 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			// Set state to Waiting to ensure status watcher triggers UI update when playing starts
 			screen.updateScreenState("Waiting")
 
-			// Load new media on existing connection (async to avoid blocking)
+			// Load new media on the active receiver (async to avoid blocking).
 			// live=false for skip-next (local files don't need LIVE stream type)
 			client := screen.chromecastClient
 			go func() {
 				if client == nil || !client.IsConnected() {
 					return
 				}
-				if err := client.Load(mediaURL, mediaType, ffmpegSeek, screen.mediaDuration, subtitleURL, false); err != nil {
+				if err := client.LoadOnExisting(mediaURL, mediaType, ffmpegSeek, screen.mediaDuration, subtitleURL, false); err != nil {
 					if !screen.isChromecastActionCurrent(actionID) {
 						return
 					}

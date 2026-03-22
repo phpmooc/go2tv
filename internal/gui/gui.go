@@ -360,13 +360,12 @@ func (p *FyneScreen) Fini() {
 
 		gaplessOption := fyne.CurrentApp().Preferences().StringWithFallback("Gapless", "Disabled")
 
+		// Finished-media transitions should always restart from a stopped state.
+		// Otherwise playAction may interpret the follow-up as pause/resume.
+		p.updateScreenState("Stopped")
+
 		// For Chromecast, ignore gapless setting (it's DLNA-specific)
 		isChromecast := p.selectedDeviceType == devices.DeviceTypeChromecast
-
-		// For Chromecast, reset state to Stopped so playAction doesn't interpret as pause
-		if isChromecast {
-			p.updateScreenState("Stopped")
-		}
 
 		if p.NextMediaCheck.Checked && (isChromecast || gaplessOption == "Disabled") {
 			_, nextMediaPath, err := getNextAutoPlayMediaOrError(p)
@@ -377,6 +376,11 @@ func (p *FyneScreen) Fini() {
 				}
 				check(p, err)
 				startAfreshPlayButton(p)
+				return
+			}
+
+			if isChromecast && p.chromecastClient != nil && p.chromecastClient.IsConnected() {
+				go skipToMediaPathAction(p, nextMediaPath)
 				return
 			}
 
