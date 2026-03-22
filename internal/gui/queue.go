@@ -258,21 +258,29 @@ func (screen *FyneScreen) setQueueSelectedIndex(index int) {
 	screen.refreshQueueStateUI()
 }
 
-func (screen *FyneScreen) queueStatusText(queue *SessionQueue) string {
-	if queue.CurrentIndex >= 0 && queue.CurrentIndex < len(queue.Items) {
-		return fmt.Sprintf(lang.L("Queue %d/%d"), queue.CurrentIndex+1, len(queue.Items))
+func (screen *FyneScreen) activeQueueIndex(queue *SessionQueue) int {
+	if queue == nil || len(queue.Items) == 0 || screen.mediafile == "" {
+		return -1
+	}
+
+	return queue.indexByPath(screen.mediafile)
+}
+
+func (screen *FyneScreen) queueStatusText(queue *SessionQueue, activeIndex int) string {
+	if activeIndex >= 0 && activeIndex < len(queue.Items) {
+		return fmt.Sprintf(lang.L("Queue %d/%d"), activeIndex+1, len(queue.Items))
 	}
 
 	return fmt.Sprintf(lang.L("Queue: %d items"), len(queue.Items))
 }
 
-func (screen *FyneScreen) queueButtonText(queue *SessionQueue) string {
+func (screen *FyneScreen) queueButtonText(queue *SessionQueue, activeIndex int) string {
 	if queue == nil || len(queue.Items) == 0 {
 		return lang.L("Queue")
 	}
 
-	if queue.CurrentIndex >= 0 && queue.CurrentIndex < len(queue.Items) {
-		return fmt.Sprintf(lang.L("Queue %d/%d"), queue.CurrentIndex+1, len(queue.Items))
+	if activeIndex >= 0 && activeIndex < len(queue.Items) {
+		return fmt.Sprintf(lang.L("Queue %d/%d"), activeIndex+1, len(queue.Items))
 	}
 
 	return fmt.Sprintf(lang.L("Queue %d"), len(queue.Items))
@@ -286,8 +294,9 @@ func (screen *FyneScreen) queueInteractionsLocked() bool {
 
 func (screen *FyneScreen) refreshQueueStateUI() {
 	queue, selectedIndex := screen.queueSnapshot()
+	activeIndex := screen.activeQueueIndex(queue)
 	statusText := ""
-	buttonText := screen.queueButtonText(queue)
+	buttonText := screen.queueButtonText(queue, activeIndex)
 	buttonImportance := widget.DangerImportance
 	detailsText := lang.L("No item selected")
 	locked := screen.queueInteractionsLocked()
@@ -296,7 +305,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		detailsText = queue.Items[selectedIndex].Path
 	}
 	if queue != nil && len(queue.Items) > 0 {
-		statusText = screen.queueStatusText(queue)
+		statusText = screen.queueStatusText(queue, activeIndex)
 		buttonText = statusText
 		buttonImportance = widget.SuccessImportance
 	}
@@ -336,7 +345,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		}
 
 		currentSelected := queue != nil && selectedIndex >= 0 && selectedIndex < len(queue.Items)
-		currentIsActive := currentSelected && queue.CurrentIndex == selectedIndex
+		currentIsActive := currentSelected && activeIndex == selectedIndex
 
 		if screen.queueAddButton != nil {
 			if !locked {
@@ -458,13 +467,14 @@ func (screen *FyneScreen) buildQueueWindow() {
 		},
 		func(id widget.ListItemID, object fyne.CanvasObject) {
 			queue, _ := screen.queueSnapshot()
+			activeIndex := screen.activeQueueIndex(queue)
 			row := object.(*queueRow)
 			if queue == nil || id < 0 || id >= len(queue.Items) {
 				row.setRow(id, QueueItem{}, false)
 				return
 			}
 
-			row.setRow(id, queue.Items[id], queue.CurrentIndex == id)
+			row.setRow(id, queue.Items[id], activeIndex == id)
 		},
 	)
 	list.OnSelected = func(id widget.ListItemID) {

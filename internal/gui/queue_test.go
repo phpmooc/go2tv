@@ -193,6 +193,23 @@ func TestQueueInteractionsLocked(t *testing.T) {
 	}
 }
 
+func TestActiveQueueIndexRequiresCurrentMedia(t *testing.T) {
+	screen := &FyneScreen{}
+	queue := newSessionQueue([]QueueItem{
+		{Path: "/tmp/one.mp4", BaseName: "one.mp4", ParentFolder: "/tmp", MediaType: "video"},
+		{Path: "/tmp/two.mp4", BaseName: "two.mp4", ParentFolder: "/tmp", MediaType: "video"},
+	}, 1)
+
+	if got := screen.activeQueueIndex(queue); got != -1 {
+		t.Fatalf("expected no active queue item without media selection, got %d", got)
+	}
+
+	screen.mediafile = "/tmp/two.mp4"
+	if got := screen.activeQueueIndex(queue); got != 1 {
+		t.Fatalf("expected active queue index 1, got %d", got)
+	}
+}
+
 func TestDroppedMediaBlockedError(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
