@@ -156,6 +156,13 @@ type debugWriter struct {
 	ring *ring.Ring
 }
 
+type droppedMediaMode uint8
+
+const (
+	droppedMediaModeReplace droppedMediaMode = iota
+	droppedMediaModeAppend
+)
+
 type devType struct {
 	name        string
 	addr        string
@@ -766,52 +773,78 @@ func NewFyneScreen(version string) *FyneScreen {
 
 func onDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
 	return func(p fyne.Position, u []fyne.URI) {
-		var mfiles, sfiles []fyne.URI
-
-	out:
-		for _, f := range u {
-			if strings.HasSuffix(strings.ToUpper(f.Name()), ".SRT") {
-				sfiles = append(sfiles, f)
-				continue
-			}
-
-			for _, s := range screen.mediaFormats {
-				if strings.HasSuffix(strings.ToUpper(f.Name()), strings.ToUpper(s)) {
-					mfiles = append(mfiles, f)
-					continue out
-				}
-			}
-		}
-
-		if len(sfiles) > 0 {
-			screen.CustomSubsCheck.SetChecked(true)
-			selectSubsFile(screen, sfiles[0])
-		}
-
-		if len(mfiles) > 0 {
-			if err := screen.droppedMediaBlockedError(); err != nil {
-				check(screen, err)
-				return
-			}
-
-			paths := make([]string, 0, len(mfiles))
-			for _, mediaURI := range mfiles {
-				paths = append(paths, mediaURI.Path())
-			}
-
-			go func() {
-				check(screen, selectMediaPaths(screen, paths))
-			}()
-		}
+		handleDroppedFiles(screen, droppedMediaModeReplace, u)
 	}
 }
 
 func (screen *FyneScreen) droppedMediaBlockedError() error {
+	return screen.droppedMediaBlockedErrorForMode(droppedMediaModeReplace)
+}
+
+func handleDroppedFiles(screen *FyneScreen, mode droppedMediaMode, uris []fyne.URI) {
+	mfiles, sfiles := splitDroppedFiles(screen, uris)
+
+	if mode == droppedMediaModeReplace && len(sfiles) > 0 {
+		screen.CustomSubsCheck.SetChecked(true)
+		selectSubsFile(screen, sfiles[0])
+	}
+
+	if len(mfiles) == 0 {
+		return
+	}
+
+	if err := screen.droppedMediaBlockedErrorForMode(mode); err != nil {
+		check(screen, err)
+		return
+	}
+
+	paths := make([]string, 0, len(mfiles))
+	for _, mediaURI := range mfiles {
+		paths = append(paths, mediaURI.Path())
+	}
+
+	go func() {
+		var err error
+		switch mode {
+		case droppedMediaModeAppend:
+			err = appendMediaPaths(screen, paths)
+		default:
+			err = selectMediaPaths(screen, paths)
+		}
+
+		check(screen, err)
+	}()
+}
+
+func splitDroppedFiles(screen *FyneScreen, uris []fyne.URI) ([]fyne.URI, []fyne.URI) {
+	var mfiles, sfiles []fyne.URI
+
+out:
+	for _, f := range uris {
+		if strings.HasSuffix(strings.ToUpper(f.Name()), ".SRT") {
+			sfiles = append(sfiles, f)
+			continue
+		}
+
+		for _, s := range screen.mediaFormats {
+			if strings.HasSuffix(strings.ToUpper(f.Name()), strings.ToUpper(s)) {
+				mfiles = append(mfiles, f)
+				continue out
+			}
+		}
+	}
+
+	return mfiles, sfiles
+}
+
+func (screen *FyneScreen) droppedMediaBlockedErrorForMode(mode droppedMediaMode) error {
 	switch {
 	case screen.Screencast:
 		return errors.New(lang.L("disable Cast Desktop before dropping files"))
 	case screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked:
 		return errors.New(lang.L("disable RTMP server before dropping files"))
+	case mode == droppedMediaModeAppend && screen.ExternalMediaURL != nil && screen.ExternalMediaURL.Checked:
+		return errors.New(lang.L("disable Media from URL before adding queue files"))
 	default:
 		return nil
 	}

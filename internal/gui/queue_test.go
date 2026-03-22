@@ -240,3 +240,42 @@ func TestDroppedMediaBlockedError(t *testing.T) {
 		t.Fatalf("expected drop block while screencast mode is active")
 	}
 }
+
+func TestQueueDropMode(t *testing.T) {
+	screen := &FyneScreen{}
+
+	if got := screen.queueDropMode(); got != droppedMediaModeReplace {
+		t.Fatalf("expected replace mode for empty queue, got %d", got)
+	}
+
+	screen.SessionQueue = newSessionQueue([]QueueItem{
+		{Path: "/tmp/one.mp4", BaseName: "one.mp4", ParentFolder: "/tmp", MediaType: "video"},
+	}, 0)
+
+	if got := screen.queueDropMode(); got != droppedMediaModeAppend {
+		t.Fatalf("expected append mode for existing queue, got %d", got)
+	}
+}
+
+func TestDroppedMediaBlockedErrorForAppendMode(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	screen := &FyneScreen{
+		ExternalMediaURL: widget.NewCheck("", nil),
+		rtmpServerCheck:  widget.NewCheck("", nil),
+	}
+
+	if err := screen.droppedMediaBlockedErrorForMode(droppedMediaModeAppend); err != nil {
+		t.Fatalf("unexpected append drop block without live mode: %v", err)
+	}
+
+	screen.ExternalMediaURL.SetChecked(true)
+	if err := screen.droppedMediaBlockedErrorForMode(droppedMediaModeAppend); err == nil {
+		t.Fatalf("expected append drop block while external URL mode is active")
+	}
+
+	if err := screen.droppedMediaBlockedErrorForMode(droppedMediaModeReplace); err != nil {
+		t.Fatalf("replace mode should still allow dropping files, got %v", err)
+	}
+}

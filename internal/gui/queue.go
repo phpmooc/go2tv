@@ -447,8 +447,23 @@ func (screen *FyneScreen) openQueueWindow() {
 	}
 }
 
+func (screen *FyneScreen) queueDropMode() droppedMediaMode {
+	if screen.hasSessionQueue() {
+		return droppedMediaModeAppend
+	}
+
+	return droppedMediaModeReplace
+}
+
+func onQueueDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
+	return func(p fyne.Position, u []fyne.URI) {
+		handleDroppedFiles(screen, screen.queueDropMode(), u)
+	}
+}
+
 func (screen *FyneScreen) buildQueueWindow() {
 	win := fyne.CurrentApp().NewWindow(lang.L("Queue"))
+	win.SetOnDropped(onQueueDropFiles(screen))
 	header := widget.NewLabel("")
 	details := widget.NewLabel(lang.L("No item selected"))
 	details.Wrapping = fyne.TextWrapWord
