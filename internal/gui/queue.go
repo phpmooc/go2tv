@@ -9,11 +9,19 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/lang"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	xfilepicker "github.com/alexballas/xfilepicker/dialog"
+)
+
+const (
+	queueRowThumbWidth  float32 = 96
+	queueRowThumbHeight float32 = 60
 )
 
 type QueueItem struct {
@@ -177,7 +185,28 @@ func (screen *FyneScreen) replaceSessionQueue(items []QueueItem, currentIndex in
 	}
 	screen.mu.Unlock()
 
+	screen.prewarmQueueThumbnails(items)
 	screen.refreshQueueStateUI()
+}
+
+func (screen *FyneScreen) prewarmQueueThumbnails(items []QueueItem) {
+	if len(items) == 0 {
+		return
+	}
+
+	uris := make([]fyne.URI, 0, len(items))
+	for _, item := range items {
+		switch item.MediaType {
+		case "image", "video":
+			uris = append(uris, storage.NewFileURI(item.Path))
+		}
+	}
+
+	if len(uris) == 0 {
+		return
+	}
+
+	xfilepicker.GetThumbnailManager().PrewarmDirectory(uris)
 }
 
 func (screen *FyneScreen) queueSnapshot() (*SessionQueue, int) {
@@ -601,27 +630,51 @@ func (screen *FyneScreen) clearSessionQueueAction() {
 
 type queueRow struct {
 	widget.BaseWidget
-	screen      *FyneScreen
-	index       int
-	icon        *widget.Icon
-	title       *widget.Label
-	subtitle    *widget.Label
-	currentIcon *widget.Icon
-	content     fyne.CanvasObject
+	screen       *FyneScreen
+	index        int
+	currentPath  string
+	thumbnail    *canvas.Image
+	fallbackIcon *canvas.Image
+	title        *widget.Label
+	subtitle     *widget.Label
+	currentIcon  *widget.Icon
+	content      fyne.CanvasObject
 }
 
 func newQueueRow(screen *FyneScreen) *queueRow {
+	thumbnail := canvas.NewImageFromImage(nil)
+	thumbnail.FillMode = canvas.ImageFillContain
+	thumbnail.Hide()
+
+	fallbackIcon := canvas.NewImageFromResource(theme.FileVideoIcon())
+	fallbackIcon.FillMode = canvas.ImageFillContain
+
+	title := widget.NewLabel("")
+	title.Truncation = fyne.TextTruncateEllipsis
+
+	subtitle := widget.NewLabel("")
+	subtitle.Truncation = fyne.TextTruncateEllipsis
+
+	thumb := container.NewGridWrap(
+		fyne.NewSize(queueRowThumbWidth, queueRowThumbHeight),
+		container.NewStack(
+			thumbnail,
+			fallbackIcon,
+		),
+	)
+
 	row := &queueRow{
-		screen:      screen,
-		icon:        widget.NewIcon(theme.FileVideoIcon()),
-		title:       widget.NewLabel(""),
-		subtitle:    widget.NewLabel(""),
-		currentIcon: widget.NewIcon(nil),
+		screen:       screen,
+		thumbnail:    thumbnail,
+		fallbackIcon: fallbackIcon,
+		title:        title,
+		subtitle:     subtitle,
+		currentIcon:  widget.NewIcon(nil),
 	}
 	row.content = container.NewBorder(
 		nil,
 		nil,
-		row.icon,
+		thumb,
 		row.currentIcon,
 		container.NewVBox(row.title, row.subtitle),
 	)
@@ -643,18 +696,37 @@ func (r *queueRow) Tapped(*fyne.PointEvent) {
 
 func (r *queueRow) setRow(index int, item QueueItem, isCurrent bool) {
 	r.index = index
+	r.currentPath = item.Path
 	r.title.SetText(item.BaseName)
 	r.subtitle.SetText(item.ParentFolder)
+	r.thumbnail.File = ""
+	r.thumbnail.Resource = nil
+	r.thumbnail.Image = nil
+	r.thumbnail.Hide()
+	r.fallbackIcon.Show()
 
 	switch item.MediaType {
 	case "audio":
-		r.icon.SetResource(theme.FileAudioIcon())
+		r.fallbackIcon.Resource = theme.FileAudioIcon()
 	case "image":
-		r.icon.SetResource(theme.FileImageIcon())
+		r.fallbackIcon.Resource = theme.FileImageIcon()
 	case "video":
-		r.icon.SetResource(theme.FileVideoIcon())
+		r.fallbackIcon.Resource = theme.FileVideoIcon()
 	default:
-		r.icon.SetResource(theme.FileIcon())
+		r.fallbackIcon.Resource = theme.FileIcon()
+	}
+
+	if item.MediaType == "image" || item.MediaType == "video" {
+		if img := xfilepicker.GetThumbnailManager().LoadMemoryOnly(item.Path); img != nil {
+			r.applyThumbnail(item.Path, img)
+		} else if item.Path != "" {
+			uri := storage.NewFileURI(item.Path)
+			xfilepicker.GetThumbnailManager().Load(uri, func(img *canvas.Image) {
+				fyne.Do(func() {
+					r.applyThumbnail(item.Path, img)
+				})
+			})
+		}
 	}
 
 	if isCurrent {
@@ -666,4 +738,17 @@ func (r *queueRow) setRow(index int, item QueueItem, isCurrent bool) {
 	}
 
 	r.Refresh()
+}
+
+func (r *queueRow) applyThumbnail(path string, img *canvas.Image) {
+	if img == nil || r.currentPath != path {
+		return
+	}
+
+	r.thumbnail.File = ""
+	r.thumbnail.Resource = nil
+	r.thumbnail.Image = img.Image
+	r.thumbnail.Refresh()
+	r.thumbnail.Show()
+	r.fallbackIcon.Hide()
 }
