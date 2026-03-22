@@ -1724,11 +1724,19 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 		go func() {
 			// Determine if transcoding is enabled
 			transcode := screen.Transcode
+			ffmpegSeek := 0
 
 			// Chromecast handles images and audio natively - never transcode these
 			mediaTypeSlice := strings.Split(mediaType, "/")
 			if len(mediaTypeSlice) > 0 && (mediaTypeSlice[0] == "image" || mediaTypeSlice[0] == "audio") {
 				transcode = false
+			}
+
+			storedResume := screen.prepareResumeSession(mediaType)
+			ffmpegSeek = computeChromecastResumeStart(0, storedResume)
+			screen.ffmpegSeek = 0
+			if transcode {
+				screen.ffmpegSeek = ffmpegSeek
 			}
 
 			// Set casting media type
@@ -1752,9 +1760,6 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 					screen.mediaDuration = duration
 				}
 
-				// Reset seek position for new file
-				screen.ffmpegSeek = 0
-
 				// Determine subtitle path for burning (only if user selected)
 				subsPath := ""
 				if screen.subsfile != "" {
@@ -1764,7 +1769,7 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				tcOpts := &utils.TranscodeOptions{
 					FFmpegPath:   screen.ffmpegPath,
 					SubsPath:     subsPath,
-					SeekSeconds:  0,
+					SeekSeconds:  ffmpegSeek,
 					SubtitleSize: utils.SubtitleSizeMedium,
 					LogOutput:    screen.Debug,
 				}
@@ -1839,7 +1844,7 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				if client == nil || !client.IsConnected() {
 					return
 				}
-				if err := client.Load(mediaURL, mediaType, 0, screen.mediaDuration, subtitleURL, false); err != nil {
+				if err := client.Load(mediaURL, mediaType, ffmpegSeek, screen.mediaDuration, subtitleURL, false); err != nil {
 					if !screen.isChromecastActionCurrent(actionID) {
 						return
 					}
