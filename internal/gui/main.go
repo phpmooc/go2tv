@@ -416,6 +416,10 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		if k.Name == "N" {
 			s.SkipNextButton.Tapped(fynePE)
 		}
+
+		if k.Name == "B" && s.SkipPreviousButton != nil {
+			s.SkipPreviousButton.Tapped(fynePE)
+		}
 	})
 
 	// Avoid parallel execution of getDevices.
@@ -499,11 +503,23 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		clearsubsAction(s)
 	})
 
+	skipPrevious := widget.NewButtonWithIcon(lang.L("Previous"), theme.MediaSkipPreviousIcon(), func() {
+		skipPreviousAction(s)
+	})
+	skipPrevious.Importance = widget.LowImportance
+	skipPrevious.Alignment = widget.ButtonAlignCenter
+
 	skipNext := widget.NewButtonWithIcon(lang.L("Next"), theme.MediaSkipNextIcon(), func() {
 		skipNextAction(s)
 	})
 	skipNext.Importance = widget.LowImportance
 	skipNext.Alignment = widget.ButtonAlignCenter
+
+	queueButton := widget.NewButton(lang.L("Queue"), func() {
+		s.openQueueWindow()
+	})
+	queueButton.Importance = widget.DangerImportance
+	queueButtonThemeOverride := container.NewThemeOverride(queueButton, queueButtonTheme{})
 	sliderBar := newTappableSlider(s)
 
 	// previewmedia spawns external applications.
@@ -612,6 +628,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	s.VolumeUp = volumeup
 	s.VolumeDown = volumedown
 	s.NextMediaCheck = nextmedia
+	s.SkipPreviousButton = skipPrevious
 	s.SkipNextButton = skipNext
 	s.SlideBar = sliderBar
 	s.CurrentPos = curPos
@@ -621,6 +638,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	s.ScreencastCheckBox = &screencast.Check
 	s.LoopSelectedCheck = medialoop
 	s.MediaBrowse = mbrowse
+	s.QueueButton = queueButton
 	s.ClearMedia = clearmedia
 	s.SubsBrowse = sbrowse
 
@@ -628,13 +646,16 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	endPos.Set("00:00:00")
 
 	setPlayPauseView("", s)
+	s.refreshQueueStateUI()
 
 	sliderArea := container.NewBorder(nil, nil, widget.NewLabelWithData(curPos), widget.NewLabelWithData(endPos), sliderBar)
 
 	actionbuttons := container.NewHBox(
+		skipPrevious,
 		playpause,
 		stop,
 		skipNext,
+		queueButtonThemeOverride,
 		layout.NewSpacer(),
 		volumedown,
 		muteunmute,
@@ -816,6 +837,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 			mbrowse.Disable()
 			previewmedia.Disable()
 			skipNext.Disable()
+			skipPrevious.Disable()
 
 			// keep old values
 			mediafileOld = s.mediafile
@@ -846,7 +868,6 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 
 		mbrowse.Enable()
 		previewmedia.Enable()
-		skipNext.Enable()
 		mediafilelabel.Text = lang.L("Media File") + ":"
 		s.MediaText.SetPlaceHolder("")
 		s.MediaText.Text = mediafileOldText
@@ -859,6 +880,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 				return
 			}
 		}
+		s.refreshTraversalControls()
 		setPlayPauseView("", s)
 	}
 

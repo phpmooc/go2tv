@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -46,6 +47,7 @@ type FyneScreen struct {
 	PlayPause                *widget.Button
 	Debug                    *debugWriter
 	VolumeUp                 *widget.Button
+	SkipPreviousButton       *widget.Button
 	SkipNextButton           *widget.Button
 	tvdata                   *soapcalls.TVPayload
 	tabs                     *container.AppTabs
@@ -112,8 +114,22 @@ type FyneScreen struct {
 	Hotkeys                  bool
 	hotkeysSuspendCount      int32
 	MediaBrowse              *widget.Button
+	QueueButton              *widget.Button
 	ClearMedia               *widget.Button
 	SubsBrowse               *widget.Button
+	SessionQueue             *SessionQueue
+	queueWindow              fyne.Window
+	queueList                *widget.List
+	queueHeader              *widget.Label
+	queueDetails             *widget.Label
+	queuePlayNowButton       *widget.Button
+	queueRemoveButton        *widget.Button
+	queueMoveUpButton        *widget.Button
+	queueMoveDownButton      *widget.Button
+	queueClearButton         *widget.Button
+	queueSelectedIndex       int
+	lastQueueTapIndex        int
+	lastQueueTapAt           time.Time
 	ActiveDeviceLabel        *widget.Label
 	ActiveDeviceCard         *widget.Card
 	rtmpServer               *rtmp.Server
@@ -345,19 +361,21 @@ func (p *FyneScreen) Fini() {
 		}
 
 		if p.NextMediaCheck.Checked && (isChromecast || gaplessOption == "Disabled") {
-			nextMediaName, nextMediaPath, err := getNextMediaOrError(p)
+			_, nextMediaPath, err := getNextMediaOrError(p)
 			if err != nil {
+				if isTraversalBoundaryError(err) {
+					startAfreshPlayButton(p)
+					return
+				}
 				check(p, err)
 				startAfreshPlayButton(p)
 				return
 			}
 
-			p.MediaText.Text = nextMediaName
-			p.mediafile = nextMediaPath
-			p.MediaText.Refresh()
-
-			if !p.CustomSubsCheck.Checked {
-				autoSelectNextSubs(p.mediafile, p)
+			if err := setCurrentMediaPath(p, nextMediaPath); err != nil {
+				check(p, err)
+				startAfreshPlayButton(p)
+				return
 			}
 
 			go playAction(p)
@@ -387,57 +405,112 @@ func check(s *FyneScreen, err error) {
 	})
 }
 
-func getNextMedia(screen *FyneScreen) (string, string) {
-	filedir := filepath.Dir(screen.mediafile)
-	filelist, err := os.ReadDir(filedir)
-	check(screen, err)
+var (
+	errNoNextQueueMedia      = errors.New("no next queued media")
+	errNoPreviousQueueMedia  = errors.New("no previous queued media")
+	errNoPreviousFolderMedia = errors.New("no previous media file found in the current folder")
+)
 
-	files := make([]string, 0)
-	getType := func(s string) string {
-		switch {
-		case slices.Contains(screen.imageFormats, filepath.Ext(s)):
-			return "image"
-		case slices.Contains(screen.videoFormats, filepath.Ext(s)):
-			return "video"
-		case slices.Contains(screen.audioFormats, filepath.Ext(s)):
-			return "audio"
-		}
-		return ""
+func getAdjacentMedia(screen *FyneScreen, delta int) (string, string, error) {
+	if screen.hasSessionQueue() {
+		return getAdjacentQueuedMedia(screen, delta)
 	}
 
-	for _, f := range filelist {
-		fullPath := filepath.Join(filedir, f.Name())
+	return getAdjacentFolderMedia(screen, delta)
+}
 
+func getAdjacentQueuedMedia(screen *FyneScreen, delta int) (string, string, error) {
+	queue, _ := screen.queueSnapshot()
+	if queue == nil || len(queue.Items) == 0 {
+		return "", "", errors.New(lang.L("queue is empty"))
+	}
+
+	if queue.CurrentIndex < 0 || queue.CurrentIndex >= len(queue.Items) {
+		currentIndex := queue.indexByPath(screen.mediafile)
+		if currentIndex == -1 {
+			return "", "", errors.New(lang.L("current media file is not in the queue"))
+		}
+		queue.CurrentIndex = currentIndex
+	}
+
+	nextIndex := queue.adjacentIndex(delta, screen.SkinNextOnlySameTypes)
+	if nextIndex == -1 {
+		if delta < 0 {
+			return "", "", errNoPreviousQueueMedia
+		}
+
+		return "", "", errNoNextQueueMedia
+	}
+
+	item := queue.Items[nextIndex]
+	return item.BaseName, item.Path, nil
+}
+
+func getAdjacentFolderMedia(screen *FyneScreen, delta int) (string, string, error) {
+	filedir := filepath.Dir(screen.mediafile)
+	filelist, err := os.ReadDir(filedir)
+	if err != nil {
+		return "", "", err
+	}
+
+	files := make([]string, 0, len(filelist))
+	currentType := screen.mediaKindForPath(screen.mediafile)
+
+	for _, file := range filelist {
+		fullPath := filepath.Join(filedir, file.Name())
 		if !slices.Contains(screen.mediaFormats, filepath.Ext(fullPath)) {
 			continue
 		}
 
-		if screen.SkinNextOnlySameTypes && getType(screen.mediafile) != getType(fullPath) {
+		if screen.SkinNextOnlySameTypes && currentType != screen.mediaKindForPath(fullPath) {
 			continue
 		}
 
-		files = append(files, f.Name())
+		files = append(files, file.Name())
 	}
 
 	if len(files) == 0 {
-		return "", ""
-	}
+		if delta < 0 {
+			return "", "", errNoPreviousFolderMedia
+		}
 
-	idx := slices.Index(files, filepath.Base(screen.mediafile))
-	if idx+1 == len(files) {
-		return files[0], filepath.Join(filedir, files[0])
-	}
-
-	return files[idx+1], filepath.Join(filedir, files[idx+1])
-}
-
-func getNextMediaOrError(screen *FyneScreen) (string, string, error) {
-	name, path := getNextMedia(screen)
-	if name == "" || path == "" {
 		return "", "", errors.New(lang.L("no next media file found in the current folder"))
 	}
 
-	return name, path, nil
+	currentIndex := slices.Index(files, filepath.Base(screen.mediafile))
+	if currentIndex == -1 {
+		return "", "", errors.New(lang.L("current media file not found in the current folder"))
+	}
+
+	switch {
+	case delta < 0:
+		if currentIndex == 0 {
+			return "", "", errNoPreviousFolderMedia
+		}
+
+		prevName := files[currentIndex-1]
+		return prevName, filepath.Join(filedir, prevName), nil
+	case currentIndex+1 == len(files):
+		nextName := files[0]
+		return nextName, filepath.Join(filedir, nextName), nil
+	default:
+		nextName := files[currentIndex+1]
+		return nextName, filepath.Join(filedir, nextName), nil
+	}
+}
+
+func isTraversalBoundaryError(err error) bool {
+	return errors.Is(err, errNoNextQueueMedia) ||
+		errors.Is(err, errNoPreviousQueueMedia) ||
+		errors.Is(err, errNoPreviousFolderMedia)
+}
+
+func getNextMediaOrError(screen *FyneScreen) (string, string, error) {
+	return getAdjacentMedia(screen, 1)
+}
+
+func getPreviousMediaOrError(screen *FyneScreen) (string, string, error) {
+	return getAdjacentMedia(screen, -1)
 }
 
 func autoSelectNextSubs(v string, screen *FyneScreen) {
@@ -510,10 +583,7 @@ func setPlayPauseView(s string, screen *FyneScreen) {
 				}
 			}
 			screen.PlayPause.Refresh()
-
-			if !screen.ExternalMediaURL.Checked {
-				screen.SkipNextButton.Enable()
-			}
+			screen.refreshTraversalControls()
 		})
 	}()
 }
@@ -679,15 +749,17 @@ func NewFyneScreen(version string) *FyneScreen {
 	}()
 
 	return &FyneScreen{
-		Current:        w,
-		currentmfolder: currentDir,
-		ffmpegPath:     ffmpegPath,
-		mediaFormats:   []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
-		imageFormats:   []string{".jpg", ".jpeg", ".png"},
-		videoFormats:   []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv"},
-		audioFormats:   []string{".mp3", ".flac", ".wav", ".m4a"},
-		version:        version,
-		Debug:          dw,
+		Current:            w,
+		currentmfolder:     currentDir,
+		ffmpegPath:         ffmpegPath,
+		mediaFormats:       []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
+		imageFormats:       []string{".jpg", ".jpeg", ".png"},
+		videoFormats:       []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv"},
+		audioFormats:       []string{".mp3", ".flac", ".wav", ".m4a"},
+		version:            version,
+		Debug:              dw,
+		queueSelectedIndex: -1,
+		lastQueueTapIndex:  -1,
 	}
 }
 
@@ -720,7 +792,11 @@ func onDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
 		}
 
 		if len(mfiles) > 0 {
-			selectMediaFile(screen, mfiles[0])
+			paths := make([]string, 0, len(mfiles))
+			for _, mediaURI := range mfiles {
+				paths = append(paths, mediaURI.Path())
+			}
+			check(screen, selectMediaPaths(screen, paths))
 		}
 	}
 }

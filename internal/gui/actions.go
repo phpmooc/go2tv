@@ -185,37 +185,164 @@ func unmuteAction(screen *FyneScreen) {
 }
 
 func selectMediaFile(screen *FyneScreen, f fyne.URI) {
-	mfile := f.Path()
-	absMediaFile, err := filepath.Abs(mfile)
-	check(screen, err)
-	if err != nil {
-		return
+	if err := selectMediaPaths(screen, []string{f.Path()}); err != nil {
+		check(screen, err)
+	}
+}
+
+func selectMediaPaths(screen *FyneScreen, paths []string) error {
+	items := screen.buildQueueItems(paths)
+	if len(items) == 0 {
+		return errors.New(lang.L("please select a media file"))
 	}
 
-	screen.SelectInternalSubs.ClearSelected()
-	screen.ExternalMediaURL.SetChecked(false)
+	if len(items) > 1 {
+		screen.replaceSessionQueue(items, 0)
+	} else {
+		screen.replaceSessionQueue(nil, -1)
+	}
 
-	screen.MediaText.Text = filepath.Base(mfile)
+	return setCurrentMediaPath(screen, items[0].Path)
+}
+
+func appendMediaPaths(screen *FyneScreen, paths []string) error {
+	itemsToAdd := screen.buildQueueItems(paths)
+	if len(itemsToAdd) == 0 {
+		return errors.New(lang.L("please select a media file"))
+	}
+
+	queue, _ := screen.queueSnapshot()
+	combined := make([]QueueItem, 0, len(itemsToAdd)+1)
+	seen := make(map[string]struct{}, len(itemsToAdd)+1)
+	addItem := func(item QueueItem) {
+		if _, ok := seen[item.Path]; ok {
+			return
+		}
+		seen[item.Path] = struct{}{}
+		combined = append(combined, item)
+	}
+
+	currentIndex := 0
+	if queue != nil && len(queue.Items) > 0 {
+		for _, item := range queue.Items {
+			addItem(item)
+		}
+		currentIndex = queue.CurrentIndex
+	} else if screen.mediafile != "" && (screen.ExternalMediaURL == nil || !screen.ExternalMediaURL.Checked) {
+		if currentItem, ok := screen.newQueueItem(screen.mediafile); ok {
+			addItem(currentItem)
+		}
+	}
+
+	for _, item := range itemsToAdd {
+		addItem(item)
+	}
+
+	if len(combined) == 0 {
+		return errors.New(lang.L("please select a media file"))
+	}
+
+	if queue != nil || len(combined) > 1 {
+		screen.replaceSessionQueue(combined, currentIndex)
+		if screen.mediafile == "" {
+			return setCurrentMediaPath(screen, combined[0].Path)
+		}
+		return nil
+	}
+
+	return setCurrentMediaPath(screen, combined[0].Path)
+}
+
+func setCurrentMediaPath(screen *FyneScreen, mediaPath string) error {
+	absMediaFile, err := filepath.Abs(mediaPath)
+	if err != nil {
+		return err
+	}
+
+	if screen.ExternalMediaURL != nil && screen.ExternalMediaURL.Checked {
+		fyne.DoAndWait(func() {
+			screen.ExternalMediaURL.SetChecked(false)
+		})
+	}
+
 	screen.mediafile = absMediaFile
+	screen.currentmfolder = filepath.Dir(absMediaFile)
+	screen.syncQueueCurrentWithMedia(absMediaFile)
+
+	fyne.Do(func() {
+		if screen.SelectInternalSubs != nil {
+			screen.SelectInternalSubs.ClearSelected()
+		}
+		if screen.MediaText != nil {
+			screen.MediaText.SetText(filepath.Base(absMediaFile))
+		}
+	})
 
 	if !screen.CustomSubsCheck.Checked {
 		autoSelectNextSubs(absMediaFile, screen)
 	}
 
-	// Remember the last file location.
-	screen.currentmfolder = filepath.Dir(absMediaFile)
+	updateInternalSubsDropdown(screen, absMediaFile)
 
-	screen.MediaText.Refresh()
-
-	if !refreshInternalSubsDropdown(screen, absMediaFile) {
-		return
-	}
-
-	// Auto-enable transcoding for incompatible Chromecast media
 	if screen.selectedDeviceType == devices.DeviceTypeChromecast {
 		screen.checkChromecastCompatibility()
 	}
+
+	screen.refreshQueueStateUI()
 	setPlayPauseView("", screen)
+	return nil
+}
+
+func openMediaPicker(screen *FyneScreen, onPaths func(*FyneScreen, []string) error) {
+	openMediaPickerForWindow(screen, screen.Current, onPaths, nil)
+}
+
+func openMediaPickerForWindow(screen *FyneScreen, w fyne.Window, onPaths func(*FyneScreen, []string) error, onDone func()) {
+	xfilepicker.SetFFmpegPath(screen.ffmpegPath)
+	var resumeHotkeys func()
+	fd := xfilepicker.NewFileOpen(func(readers []fyne.URIReadCloser, err error) {
+		if resumeHotkeys != nil {
+			defer resumeHotkeys()
+		}
+		if onDone != nil {
+			defer onDone()
+		}
+		check(screen, err)
+
+		if readers == nil {
+			return
+		}
+		defer func() {
+			for _, i := range readers {
+				i.Close()
+			}
+		}()
+
+		paths := make([]string, 0, len(readers))
+		for _, reader := range readers {
+			paths = append(paths, reader.URI().Path())
+		}
+
+		check(screen, onPaths(screen, paths))
+	}, w, true)
+
+	if f, ok := fd.(xfilepicker.FilePicker); ok {
+		f.SetFilter(storage.NewExtensionFileFilter(screen.mediaFormats))
+	}
+
+	if screen.currentmfolder != "" {
+		mfileURI := storage.NewFileURI(screen.currentmfolder)
+		mfileLister, err := storage.ListerForURI(mfileURI)
+		check(screen, err)
+
+		if f, ok := fd.(xfilepicker.FilePicker); ok {
+			f.SetLocation(mfileLister)
+		}
+	}
+
+	resumeHotkeys = suspendHotkeys(screen)
+	fd.Show()
+	fd.Resize(fyne.NewSize(filePickerFillSize, filePickerFillSize))
 }
 
 func setInternalSubsDropdownNoSubs(screen *FyneScreen) {
@@ -283,43 +410,7 @@ func selectSubsFile(screen *FyneScreen, f fyne.URI) {
 }
 
 func mediaAction(screen *FyneScreen) {
-	w := screen.Current
-	xfilepicker.SetFFmpegPath(screen.ffmpegPath)
-	var resumeHotkeys func()
-	fd := xfilepicker.NewFileOpen(func(readers []fyne.URIReadCloser, err error) {
-		if resumeHotkeys != nil {
-			defer resumeHotkeys()
-		}
-		check(screen, err)
-
-		if readers == nil {
-			return
-		}
-		defer func() {
-			for _, i := range readers {
-				i.Close()
-			}
-		}()
-		selectMediaFile(screen, readers[0].URI())
-	}, w, false)
-
-	if f, ok := fd.(xfilepicker.FilePicker); ok {
-		f.SetFilter(storage.NewExtensionFileFilter(screen.mediaFormats))
-	}
-
-	if screen.currentmfolder != "" {
-		mfileURI := storage.NewFileURI(screen.currentmfolder)
-		mfileLister, err := storage.ListerForURI(mfileURI)
-		check(screen, err)
-
-		if f, ok := fd.(xfilepicker.FilePicker); ok {
-			f.SetLocation(mfileLister)
-		}
-	}
-
-	resumeHotkeys = suspendHotkeys(screen)
-	fd.Show()
-	fd.Resize(fyne.NewSize(filePickerFillSize, filePickerFillSize))
+	openMediaPicker(screen, selectMediaPaths)
 }
 
 func subsAction(screen *FyneScreen) {
@@ -1445,9 +1536,6 @@ func startAfreshPlayButton(screen *FyneScreen) {
 
 	// Reset slider and times (needed for Chromecast which doesn't use sliderUpdate loop)
 	fyne.Do(func() {
-		if !screen.ExternalMediaURL.Checked {
-			screen.SkipNextButton.Enable()
-		}
 		screen.SlideBar.SetValue(0)
 		screen.CurrentPos.Set("00:00:00")
 		screen.EndPos.Set("00:00:00")
@@ -1455,6 +1543,7 @@ func startAfreshPlayButton(screen *FyneScreen) {
 
 	screen.ffmpegSeek = 0
 	screen.mediaDuration = 0
+	screen.refreshTraversalControls()
 }
 
 func gaplessMediaWatcher(ctx context.Context, screen *FyneScreen, payload *soapcalls.TVPayload) {
@@ -1476,6 +1565,10 @@ out:
 				// that the next song is going to be requeued correctly.
 				next, _, err := getNextMediaOrError(screen)
 				if err != nil {
+					if isTraversalBoundaryError(err) {
+						screen.GaplessMediaWatcher = nil
+						break out
+					}
 					check(screen, err)
 					fyne.Do(func() {
 						screen.NextMediaCheck.SetChecked(false)
@@ -1505,8 +1598,12 @@ out:
 					screen.httpserver.RemoveHandler(mPath.Path)
 					screen.httpserver.RemoveHandler(sPath.Path)
 
-					mediaName, mediaPath, err := getNextMediaOrError(screen)
+					_, mediaPath, err := getNextMediaOrError(screen)
 					if err != nil {
+						if isTraversalBoundaryError(err) {
+							screen.GaplessMediaWatcher = nil
+							break out
+						}
 						check(screen, err)
 						fyne.Do(func() {
 							screen.NextMediaCheck.SetChecked(false)
@@ -1515,22 +1612,19 @@ out:
 						break out
 					}
 
-					screen.mediafile = mediaPath
-					fyne.Do(func() {
-						screen.MediaText.Text = mediaName
-						screen.MediaText.Refresh()
-					})
-
-					// Update embedded subtitles dropdown for new media file
-					updateInternalSubsDropdown(screen, mediaPath)
-
-					if !screen.CustomSubsCheck.Checked {
-						autoSelectNextSubs(screen.mediafile, screen)
+					if err := setCurrentMediaPath(screen, mediaPath); err != nil {
+						check(screen, err)
+						screen.GaplessMediaWatcher = nil
+						break out
 					}
 				}
 
 				newTVPayload, err := queueNext(screen, false)
 				if err != nil {
+					if isTraversalBoundaryError(err) {
+						screen.GaplessMediaWatcher = nil
+						break out
+					}
 					check(screen, err)
 					fyne.Do(func() {
 						screen.NextMediaCheck.SetChecked(false)
@@ -1550,9 +1644,11 @@ out:
 }
 
 func clearmediaAction(screen *FyneScreen) {
+	screen.replaceSessionQueue(nil, -1)
 	screen.MediaText.SetText("")
 	screen.mediafile = ""
 	setInternalSubsDropdownNoSubs(screen)
+	screen.refreshQueueStateUI()
 	setPlayPauseView("", screen)
 }
 
@@ -1562,7 +1658,15 @@ func clearsubsAction(screen *FyneScreen) {
 	screen.subsfile = ""
 }
 
+func skipPreviousAction(screen *FyneScreen) {
+	skipTraversalAction(screen, -1)
+}
+
 func skipNextAction(screen *FyneScreen) {
+	skipTraversalAction(screen, 1)
+}
+
+func skipTraversalAction(screen *FyneScreen, delta int) {
 	if screen.mediafile == "" {
 		check(screen, errors.New(lang.L("please select a media file")))
 		return
@@ -1574,29 +1678,33 @@ func skipNextAction(screen *FyneScreen) {
 		return
 	}
 
-	name, nextMediaPath, err := getNextMediaOrError(screen)
+	_, nextMediaPath, err := getAdjacentMedia(screen, delta)
 	if err != nil {
+		if isTraversalBoundaryError(err) {
+			screen.refreshTraversalControls()
+			return
+		}
 		check(screen, err)
 		return
 	}
 
+	skipToMediaPathAction(screen, nextMediaPath)
+}
+
+func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
+	oldMediaPath := screen.mediafile
+
 	fyne.Do(func() {
 		screen.PlayPause.Disable()
+		if screen.SkipPreviousButton != nil {
+			screen.SkipPreviousButton.Disable()
+		}
 		screen.SkipNextButton.Disable()
 	})
 
-	// Capture old path for handler cleanup
-	oldMediaPath := screen.mediafile
-
-	screen.MediaText.Text = name
-	screen.mediafile = nextMediaPath
-	screen.MediaText.Refresh()
-
-	// Update embedded subtitles dropdown for new media file
-	updateInternalSubsDropdown(screen, nextMediaPath)
-
-	if !screen.CustomSubsCheck.Checked {
-		autoSelectNextSubs(screen.mediafile, screen)
+	if err := setCurrentMediaPath(screen, mediaPath); err != nil {
+		check(screen, err)
+		return
 	}
 
 	// For Chromecast: reuse existing connection for faster skip
@@ -2004,7 +2112,7 @@ func queueNext(screen *FyneScreen, clear bool) (*soapcalls.TVPayload, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, spath := getNextPossibleSubs(fname)
+	_, spath := getNextPossibleSubs(fpath)
 
 	var mediaType string
 	var isSeek bool
