@@ -369,7 +369,7 @@ func (p *FyneScreen) Fini() {
 		}
 
 		if p.NextMediaCheck.Checked && (isChromecast || gaplessOption == "Disabled") {
-			_, nextMediaPath, err := getNextMediaOrError(p)
+			_, nextMediaPath, err := getNextAutoPlayMediaOrError(p)
 			if err != nil {
 				if isTraversalBoundaryError(err) {
 					startAfreshPlayButton(p)
@@ -414,20 +414,17 @@ func check(s *FyneScreen, err error) {
 }
 
 var (
-	errNoNextQueueMedia      = errors.New("no next queued media")
-	errNoPreviousQueueMedia  = errors.New("no previous queued media")
-	errNoPreviousFolderMedia = errors.New("no previous media file found in the current folder")
+	errNoNextQueueMedia     = errors.New("no next queued media")
+	errNoPreviousQueueMedia = errors.New("no previous queued media")
 )
 
+// Traversal is queue-only. Local file selection always creates or updates
+// SessionQueue, so next/previous/autoplay operate on one clear source of truth.
 func getAdjacentMedia(screen *FyneScreen, delta int) (string, string, error) {
-	if screen.hasSessionQueue() {
-		return getAdjacentQueuedMedia(screen, delta)
-	}
-
-	return getAdjacentFolderMedia(screen, delta)
+	return getAdjacentQueuedMedia(screen, delta, false)
 }
 
-func getAdjacentQueuedMedia(screen *FyneScreen, delta int) (string, string, error) {
+func getAdjacentQueuedMedia(screen *FyneScreen, delta int, wrap bool) (string, string, error) {
 	queue, _ := screen.queueSnapshot()
 	if queue == nil || len(queue.Items) == 0 {
 		return "", "", errors.New(lang.L("queue is empty"))
@@ -441,7 +438,7 @@ func getAdjacentQueuedMedia(screen *FyneScreen, delta int) (string, string, erro
 		queue.CurrentIndex = currentIndex
 	}
 
-	nextIndex := queue.adjacentIndex(delta, screen.SkinNextOnlySameTypes)
+	nextIndex := queue.adjacentIndex(delta, screen.SkinNextOnlySameTypes, wrap)
 	if nextIndex == -1 {
 		if delta < 0 {
 			return "", "", errNoPreviousQueueMedia
@@ -454,67 +451,17 @@ func getAdjacentQueuedMedia(screen *FyneScreen, delta int) (string, string, erro
 	return item.BaseName, item.Path, nil
 }
 
-func getAdjacentFolderMedia(screen *FyneScreen, delta int) (string, string, error) {
-	filedir := filepath.Dir(screen.mediafile)
-	filelist, err := os.ReadDir(filedir)
-	if err != nil {
-		return "", "", err
-	}
-
-	files := make([]string, 0, len(filelist))
-	currentType := screen.mediaKindForPath(screen.mediafile)
-
-	for _, file := range filelist {
-		fullPath := filepath.Join(filedir, file.Name())
-		if !slices.Contains(screen.mediaFormats, filepath.Ext(fullPath)) {
-			continue
-		}
-
-		if screen.SkinNextOnlySameTypes && currentType != screen.mediaKindForPath(fullPath) {
-			continue
-		}
-
-		files = append(files, file.Name())
-	}
-
-	if len(files) == 0 {
-		if delta < 0 {
-			return "", "", errNoPreviousFolderMedia
-		}
-
-		return "", "", errors.New(lang.L("no next media file found in the current folder"))
-	}
-
-	currentIndex := slices.Index(files, filepath.Base(screen.mediafile))
-	if currentIndex == -1 {
-		return "", "", errors.New(lang.L("current media file not found in the current folder"))
-	}
-
-	switch {
-	case delta < 0:
-		if currentIndex == 0 {
-			return "", "", errNoPreviousFolderMedia
-		}
-
-		prevName := files[currentIndex-1]
-		return prevName, filepath.Join(filedir, prevName), nil
-	case currentIndex+1 == len(files):
-		nextName := files[0]
-		return nextName, filepath.Join(filedir, nextName), nil
-	default:
-		nextName := files[currentIndex+1]
-		return nextName, filepath.Join(filedir, nextName), nil
-	}
-}
-
 func isTraversalBoundaryError(err error) bool {
 	return errors.Is(err, errNoNextQueueMedia) ||
-		errors.Is(err, errNoPreviousQueueMedia) ||
-		errors.Is(err, errNoPreviousFolderMedia)
+		errors.Is(err, errNoPreviousQueueMedia)
 }
 
 func getNextMediaOrError(screen *FyneScreen) (string, string, error) {
 	return getAdjacentMedia(screen, 1)
+}
+
+func getNextAutoPlayMediaOrError(screen *FyneScreen) (string, string, error) {
+	return getAdjacentQueuedMedia(screen, 1, true)
 }
 
 func getPreviousMediaOrError(screen *FyneScreen) (string, string, error) {

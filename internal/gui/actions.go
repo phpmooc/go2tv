@@ -1587,9 +1587,9 @@ out:
 			}
 
 			if screen.NextMediaCheck.Checked {
-				// If we change the current folder of media files we need to ensure
-				// that the next song is going to be requeued correctly.
-				next, _, err := getNextMediaOrError(screen)
+				// Requeue against the current session queue, which is the only
+				// source of truth for next/previous/autoplay traversal.
+				next, _, err := getNextAutoPlayMediaOrError(screen)
 				if err != nil {
 					if isTraversalBoundaryError(err) {
 						screen.GaplessMediaWatcher = nil
@@ -1624,7 +1624,7 @@ out:
 					screen.httpserver.RemoveHandler(mPath.Path)
 					screen.httpserver.RemoveHandler(sPath.Path)
 
-					_, mediaPath, err := getNextMediaOrError(screen)
+					_, mediaPath, err := getNextAutoPlayMediaOrError(screen)
 					if err != nil {
 						if isTraversalBoundaryError(err) {
 							screen.GaplessMediaWatcher = nil
@@ -2135,7 +2135,7 @@ func queueNext(screen *FyneScreen, clear bool) (*soapcalls.TVPayload, error) {
 		return nil, nil
 	}
 
-	fname, fpath, err := getNextMediaOrError(screen)
+	fname, fpath, err := getNextAutoPlayMediaOrError(screen)
 	if err != nil {
 		return nil, err
 	}

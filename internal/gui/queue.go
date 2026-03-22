@@ -86,15 +86,38 @@ func (q *SessionQueue) setCurrentByPath(mediaPath string) bool {
 	return true
 }
 
-func (q *SessionQueue) adjacentIndex(delta int, sameTypeOnly bool) int {
+func (q *SessionQueue) adjacentIndex(delta int, sameTypeOnly, wrap bool) int {
 	if q == nil || q.CurrentIndex < 0 || q.CurrentIndex >= len(q.Items) {
 		return -1
 	}
 
 	targetType := q.Items[q.CurrentIndex].MediaType
+	matches := func(idx int) bool {
+		return !sameTypeOnly || q.Items[idx].MediaType == targetType
+	}
+
 	for idx := q.CurrentIndex + delta; idx >= 0 && idx < len(q.Items); idx += delta {
-		if !sameTypeOnly || q.Items[idx].MediaType == targetType {
+		if matches(idx) {
 			return idx
+		}
+	}
+
+	if !wrap {
+		return -1
+	}
+
+	switch {
+	case delta > 0:
+		for idx := 0; idx < q.CurrentIndex; idx++ {
+			if matches(idx) {
+				return idx
+			}
+		}
+	case delta < 0:
+		for idx := len(q.Items) - 1; idx > q.CurrentIndex; idx-- {
+			if matches(idx) {
+				return idx
+			}
 		}
 	}
 
