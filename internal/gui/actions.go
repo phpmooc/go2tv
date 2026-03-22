@@ -1693,6 +1693,8 @@ func skipTraversalAction(screen *FyneScreen, delta int) {
 
 func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 	oldMediaPath := screen.mediafile
+	screen.persistDisplayedResumeProgress(true)
+	screen.clearResumeSession()
 
 	fyne.Do(func() {
 		screen.PlayPause.Disable()
@@ -1927,8 +1929,7 @@ func previewmedia(screen *FyneScreen) {
 }
 
 func stopAction(screen *FyneScreen) {
-	positionSeconds, durationSeconds := screen.displayedResumeProgress()
-	screen.persistResumeProgress(positionSeconds, durationSeconds, true)
+	screen.persistDisplayedResumeProgress(true)
 	screen.clearResumeSession()
 
 	screen.nextChromecastActionID()

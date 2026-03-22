@@ -478,6 +478,15 @@ func (s *FyneScreen) persistResumeProgress(positionSeconds int, durationSeconds 
 	s.mu.Unlock()
 }
 
+func (s *FyneScreen) persistDisplayedResumeProgress(force bool) {
+	if s == nil {
+		return
+	}
+
+	positionSeconds, durationSeconds := s.displayedResumeProgress()
+	s.persistResumeProgress(positionSeconds, durationSeconds, force)
+}
+
 func shouldAttemptInitialDLNASeek(client dlnaResumeClient) bool {
 	transportInfo, err := client.GetTransportInfo()
 	if err == nil && len(transportInfo) > 0 {
