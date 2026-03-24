@@ -339,14 +339,18 @@ func GetChromecastDevices() []Device {
 	ccMu.Lock()
 	defer ccMu.Unlock()
 
+	nameCounts := make(map[string]int, len(chromeCastDevices))
+	for _, device := range chromeCastDevices {
+		nameCounts[device.Name]++
+	}
+
 	result := make([]Device, 0, len(chromeCastDevices))
 	for address, device := range chromeCastDevices {
 		// Convert to URL format to match DLNA (GUI expects URLs)
 		addressURL := "http://" + address
-		// Add suffix to distinguish Chromecast devices in the UI
-		friendlyName := device.Name + " (Chromecast)"
-		if device.IsAudioOnly {
-			friendlyName = device.Name + " (Chromecast Audio)"
+		friendlyName := device.Name
+		if nameCounts[device.Name] > 1 {
+			friendlyName += " (" + address + ")"
 		}
 
 		result = append(result, Device{

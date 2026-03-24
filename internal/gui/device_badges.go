@@ -9,6 +9,7 @@ import (
 	"fyne.io/fyne/v2/lang"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"go2tv.app/go2tv/v2/devices"
 )
 
@@ -29,13 +30,34 @@ type deviceBadgeRenderer struct {
 	objects []fyne.CanvasObject
 }
 
+type deviceRowRenderer struct {
+	row     *deviceRow
+	objects []fyne.CanvasObject
+}
+
 type deviceRow struct {
 	widget.BaseWidget
 	leading  *widget.Icon
 	trailing *widget.Icon
-	name     *widget.Label
+	name     *ttwidget.Label
 	badges   *fyne.Container
 	content  fyne.CanvasObject
+}
+
+func currentThemeVariant() fyne.ThemeVariant {
+	app := fyne.CurrentApp()
+	if app == nil {
+		return theme.VariantDark
+	}
+
+	switch app.Preferences().StringWithFallback("Theme", "System Default") {
+	case "Light":
+		return theme.VariantLight
+	case "Dark":
+		return theme.VariantDark
+	}
+
+	return app.Settings().ThemeVariant()
 }
 
 func newDeviceBadge(text string, palette badgePalette) *deviceBadge {
@@ -94,7 +116,50 @@ func (r *deviceBadgeRenderer) Refresh() {
 	canvas.Refresh(r.badge.label)
 }
 
+func (r *deviceRowRenderer) Destroy() {}
+
+func (r *deviceRowRenderer) Layout(size fyne.Size) {
+	r.row.content.Resize(size)
+	r.row.updateNameToolTip()
+}
+
+func (r *deviceRowRenderer) MinSize() fyne.Size {
+	return r.row.content.MinSize()
+}
+
+func (r *deviceRowRenderer) Objects() []fyne.CanvasObject {
+	return r.objects
+}
+
+func (r *deviceRowRenderer) Refresh() {
+	canvas.Refresh(r.row.content)
+	r.row.updateNameToolTip()
+}
+
 func deviceBadgePalette(deviceType string) badgePalette {
+	if currentThemeVariant() == theme.VariantLight {
+		switch deviceType {
+		case devices.DeviceTypeChromecast:
+			return badgePalette{
+				fill:   color.NRGBA{R: 0x00, G: 0xaa, B: 0x8d, A: 0xff},
+				stroke: color.NRGBA{R: 0x00, G: 0x7d, B: 0x68, A: 0xff},
+				text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+			}
+		case devices.DeviceTypeDLNA:
+			return badgePalette{
+				fill:   color.NRGBA{R: 0x6d, G: 0x97, B: 0xff, A: 0xff},
+				stroke: color.NRGBA{R: 0x4a, G: 0x6f, B: 0xc9, A: 0xff},
+				text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+			}
+		default:
+			return badgePalette{
+				fill:   color.NRGBA{R: 0x70, G: 0x70, B: 0x70, A: 0xff},
+				stroke: color.NRGBA{R: 0x52, G: 0x52, B: 0x52, A: 0xff},
+				text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+			}
+		}
+	}
+
 	switch deviceType {
 	case devices.DeviceTypeChromecast:
 		return badgePalette{
@@ -118,6 +183,14 @@ func deviceBadgePalette(deviceType string) badgePalette {
 }
 
 func audioOnlyBadgePalette() badgePalette {
+	if currentThemeVariant() == theme.VariantLight {
+		return badgePalette{
+			fill:   color.NRGBA{R: 0xd1, G: 0x83, B: 0x0d, A: 0xff},
+			stroke: color.NRGBA{R: 0x9d, G: 0x5f, B: 0x05, A: 0xff},
+			text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+		}
+	}
+
 	return badgePalette{
 		fill:   color.NRGBA{R: 0x9b, G: 0x62, B: 0x09, A: 0x1f},
 		stroke: color.NRGBA{R: 0xff, G: 0xb1, B: 0x3b, A: 0xff},
@@ -139,7 +212,7 @@ func deviceBadgeObjects(item devType) []fyne.CanvasObject {
 
 func newDeviceRow(leading, trailing fyne.Resource) *deviceRow {
 	row := &deviceRow{
-		name: widget.NewLabel("Device Name"),
+		name: ttwidget.NewLabel("Device Name"),
 		badges: container.NewHBox(
 			newDeviceBadge(lang.L(devices.DeviceTypeChromecast), deviceBadgePalette(devices.DeviceTypeChromecast)),
 		),
@@ -154,7 +227,7 @@ func newDeviceRow(leading, trailing fyne.Resource) *deviceRow {
 		row.trailing = widget.NewIcon(trailing)
 	}
 
-	center := container.NewVBox(row.name, row.badges)
+	center := container.NewBorder(nil, nil, nil, row.badges, row.name)
 	switch {
 	case row.leading != nil && row.trailing != nil:
 		row.content = container.NewBorder(nil, nil, row.leading, row.trailing, center)
@@ -171,13 +244,17 @@ func newDeviceRow(leading, trailing fyne.Resource) *deviceRow {
 }
 
 func (r *deviceRow) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(r.content)
+	return &deviceRowRenderer{
+		row:     r,
+		objects: []fyne.CanvasObject{r.content},
+	}
 }
 
 func (r *deviceRow) setDevice(item devType) {
 	r.name.SetText(item.name)
 	r.badges.Objects = deviceBadgeObjects(item)
 	r.badges.Refresh()
+	r.updateNameToolTip()
 }
 
 func (r *deviceRow) setLeadingIcon(icon fyne.Resource) {
@@ -187,4 +264,29 @@ func (r *deviceRow) setLeadingIcon(icon fyne.Resource) {
 
 	r.leading.SetResource(icon)
 	r.leading.Refresh()
+}
+
+func (r *deviceRow) updateNameToolTip() {
+	if r == nil || r.name == nil {
+		return
+	}
+
+	usableWidth := r.name.Size().Width - (theme.InnerPadding() * 2)
+	if usableWidth <= 0 {
+		r.name.SetToolTip("")
+		return
+	}
+
+	textWidth := fyne.MeasureText(
+		r.name.Text,
+		theme.SizeForWidget(theme.SizeNameText, r.name),
+		r.name.TextStyle,
+	).Width
+
+	if textWidth > usableWidth {
+		r.name.SetToolTip(r.name.Text)
+		return
+	}
+
+	r.name.SetToolTip("")
 }
