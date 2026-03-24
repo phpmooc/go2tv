@@ -57,36 +57,14 @@ func newDeviceList(s *FyneScreen, dd *[]devType) *deviceList {
 	}
 
 	list.CreateItem = func() fyne.CanvasObject {
-		label := widget.NewLabel("Device Name")
-
-		// Persistent icon for the device (Left side)
-		// This will be swapped to a Play icon when active
-		icon := widget.NewIcon(castIcon())
-
-		return container.NewBorder(nil, nil, icon, nil, label)
+		return newDeviceRow(castIcon(), nil)
 	}
 
 	list.UpdateItem = func(i widget.ListItemID, o fyne.CanvasObject) {
-		container := o.(*fyne.Container)
-
-		var navIcon *widget.Icon
-		var txtLabel *widget.Label
-
-		for _, obj := range container.Objects {
-			if l, ok := obj.(*widget.Label); ok {
-				txtLabel = l
-			}
-			// Standalone icon is the main indicator (Left)
-			if icon, ok := obj.(*widget.Icon); ok {
-				navIcon = icon
-			}
-		}
+		row := o.(*deviceRow)
 
 		item := (*dd)[i]
-
-		if txtLabel != nil {
-			txtLabel.SetText(item.name)
-		}
+		row.setDevice(item)
 
 		// Determine if this device is active
 		isActive := false
@@ -131,15 +109,9 @@ func newDeviceList(s *FyneScreen, dd *[]devType) *deviceList {
 
 		// Swap icon based on state
 		if isActive {
-			if navIcon != nil {
-				navIcon.SetResource(theme.MediaPlayIcon())
-				navIcon.Refresh()
-			}
+			row.setLeadingIcon(theme.MediaPlayIcon())
 		} else {
-			if navIcon != nil {
-				navIcon.SetResource(castIcon())
-				navIcon.Refresh()
-			}
+			row.setLeadingIcon(castIcon())
 		}
 	}
 

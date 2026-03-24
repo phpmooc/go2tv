@@ -45,12 +45,11 @@ func newDeviceList(dd *[]devType) *deviceList {
 	}
 
 	list.CreateItem = func() fyne.CanvasObject {
-		intListCont := container.NewHBox(widget.NewIcon(theme.NavigateNextIcon()), widget.NewLabel(""))
-		return intListCont
+		return newDeviceRow(nil, theme.NavigateNextIcon())
 	}
 
 	list.UpdateItem = func(i widget.ListItemID, o fyne.CanvasObject) {
-		o.(*fyne.Container).Objects[1].(*widget.Label).SetText((*dd)[i].name)
+		o.(*deviceRow).setDevice((*dd)[i])
 	}
 
 	list.ExtendBaseWidget(list)
