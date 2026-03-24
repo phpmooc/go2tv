@@ -35,6 +35,8 @@ type deviceRowRenderer struct {
 	objects []fyne.CanvasObject
 }
 
+type deviceTitleLayout struct{}
+
 type deviceRow struct {
 	widget.BaseWidget
 	leading  *widget.Icon
@@ -64,7 +66,7 @@ func newDeviceBadge(text string, palette badgePalette) *deviceBadge {
 	bg := canvas.NewRectangle(palette.fill)
 	bg.CornerRadius = theme.InputRadiusSize()
 	bg.StrokeColor = palette.stroke
-	bg.StrokeWidth = 1
+	bg.StrokeWidth = 0
 
 	label := canvas.NewText(text, palette.text)
 	label.TextSize = theme.CaptionTextSize()
@@ -101,8 +103,8 @@ func (r *deviceBadgeRenderer) Layout(size fyne.Size) {
 
 func (r *deviceBadgeRenderer) MinSize() fyne.Size {
 	textSize := r.badge.label.MinSize()
-	padX := theme.InnerPadding() * 1.5
-	padY := theme.InnerPadding() * 0.6
+	padX := theme.InnerPadding()
+	padY := theme.InnerPadding() * 0.35
 	return fyne.NewSize(textSize.Width+(padX*2), textSize.Height+(padY*2))
 }
 
@@ -114,6 +116,55 @@ func (r *deviceBadgeRenderer) Refresh() {
 	r.badge.background.CornerRadius = theme.InputRadiusSize()
 	canvas.Refresh(r.badge.background)
 	canvas.Refresh(r.badge.label)
+}
+
+func (deviceTitleLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) != 2 {
+		return
+	}
+
+	name := objects[0]
+	badges := objects[1]
+	gap := theme.InnerPadding() * 0.75
+	rightPad := theme.InnerPadding() * 0.5
+	badgesMin := badges.MinSize()
+	badgesWidth := badgesMin.Width
+	availableWidth := size.Width - rightPad
+	if availableWidth < 0 {
+		availableWidth = 0
+	}
+	if badgesWidth > availableWidth {
+		badgesWidth = availableWidth
+	}
+
+	nameWidth := availableWidth - badgesWidth
+	if nameWidth > 0 {
+		nameWidth -= gap
+	} else {
+		gap = 0
+	}
+	if nameWidth < 0 {
+		nameWidth = 0
+	}
+
+	name.Resize(fyne.NewSize(nameWidth, size.Height))
+	name.Move(fyne.NewPos(0, 0))
+
+	badges.Resize(badgesMin)
+	badges.Move(fyne.NewPos(nameWidth+gap, (size.Height-badgesMin.Height)/2))
+}
+
+func (deviceTitleLayout) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	if len(objects) != 2 {
+		return fyne.Size{}
+	}
+
+	nameMin := objects[0].MinSize()
+	badgesMin := objects[1].MinSize()
+	gap := theme.InnerPadding() * 0.75
+	rightPad := theme.InnerPadding() * 0.5
+
+	return fyne.NewSize(nameMin.Width+gap+badgesMin.Width+rightPad, max(nameMin.Height, badgesMin.Height))
 }
 
 func (r *deviceRowRenderer) Destroy() {}
@@ -141,21 +192,21 @@ func deviceBadgePalette(deviceType string) badgePalette {
 		switch deviceType {
 		case devices.DeviceTypeChromecast:
 			return badgePalette{
-				fill:   color.NRGBA{R: 0x00, G: 0xaa, B: 0x8d, A: 0xff},
-				stroke: color.NRGBA{R: 0x00, G: 0x7d, B: 0x68, A: 0xff},
-				text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+				fill:   color.NRGBA{R: 0xe9, G: 0xf0, B: 0xee, A: 0xff},
+				stroke: color.NRGBA{R: 0xe9, G: 0xf0, B: 0xee, A: 0xff},
+				text:   color.NRGBA{R: 0x44, G: 0x65, B: 0x5c, A: 0xff},
 			}
 		case devices.DeviceTypeDLNA:
 			return badgePalette{
-				fill:   color.NRGBA{R: 0x6d, G: 0x97, B: 0xff, A: 0xff},
-				stroke: color.NRGBA{R: 0x4a, G: 0x6f, B: 0xc9, A: 0xff},
-				text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+				fill:   color.NRGBA{R: 0xeb, G: 0xef, B: 0xf7, A: 0xff},
+				stroke: color.NRGBA{R: 0xeb, G: 0xef, B: 0xf7, A: 0xff},
+				text:   color.NRGBA{R: 0x52, G: 0x63, B: 0x84, A: 0xff},
 			}
 		default:
 			return badgePalette{
-				fill:   color.NRGBA{R: 0x70, G: 0x70, B: 0x70, A: 0xff},
-				stroke: color.NRGBA{R: 0x52, G: 0x52, B: 0x52, A: 0xff},
-				text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+				fill:   color.NRGBA{R: 0xea, G: 0xea, B: 0xea, A: 0xff},
+				stroke: color.NRGBA{R: 0xea, G: 0xea, B: 0xea, A: 0xff},
+				text:   color.NRGBA{R: 0x5f, G: 0x5f, B: 0x5f, A: 0xff},
 			}
 		}
 	}
@@ -163,21 +214,21 @@ func deviceBadgePalette(deviceType string) badgePalette {
 	switch deviceType {
 	case devices.DeviceTypeChromecast:
 		return badgePalette{
-			fill:   color.NRGBA{R: 0x00, G: 0x84, B: 0x6f, A: 0x24},
-			stroke: color.NRGBA{R: 0x00, G: 0xd2, B: 0xaf, A: 0xff},
-			text:   color.NRGBA{R: 0x00, G: 0xe3, B: 0xbd, A: 0xff},
+			fill:   color.NRGBA{R: 0x35, G: 0x41, B: 0x3e, A: 0xff},
+			stroke: color.NRGBA{R: 0x35, G: 0x41, B: 0x3e, A: 0xff},
+			text:   color.NRGBA{R: 0xaf, G: 0xc3, B: 0xbc, A: 0xff},
 		}
 	case devices.DeviceTypeDLNA:
 		return badgePalette{
-			fill:   color.NRGBA{R: 0x1c, G: 0x55, B: 0xb8, A: 0x1f},
-			stroke: color.NRGBA{R: 0x6f, G: 0xad, B: 0xff, A: 0xff},
-			text:   color.NRGBA{R: 0x8c, G: 0xbd, B: 0xff, A: 0xff},
+			fill:   color.NRGBA{R: 0x37, G: 0x3c, B: 0x49, A: 0xff},
+			stroke: color.NRGBA{R: 0x37, G: 0x3c, B: 0x49, A: 0xff},
+			text:   color.NRGBA{R: 0xb2, G: 0xbd, B: 0xd8, A: 0xff},
 		}
 	default:
 		return badgePalette{
-			fill:   color.NRGBA{R: 0x55, G: 0x55, B: 0x55, A: 0x1f},
-			stroke: color.NRGBA{R: 0x9c, G: 0x9c, B: 0x9c, A: 0xff},
-			text:   color.NRGBA{R: 0xb8, G: 0xb8, B: 0xb8, A: 0xff},
+			fill:   color.NRGBA{R: 0x3a, G: 0x3a, B: 0x3a, A: 0xff},
+			stroke: color.NRGBA{R: 0x3a, G: 0x3a, B: 0x3a, A: 0xff},
+			text:   color.NRGBA{R: 0xbe, G: 0xbe, B: 0xbe, A: 0xff},
 		}
 	}
 }
@@ -185,16 +236,16 @@ func deviceBadgePalette(deviceType string) badgePalette {
 func audioOnlyBadgePalette() badgePalette {
 	if currentThemeVariant() == theme.VariantLight {
 		return badgePalette{
-			fill:   color.NRGBA{R: 0xd1, G: 0x83, B: 0x0d, A: 0xff},
-			stroke: color.NRGBA{R: 0x9d, G: 0x5f, B: 0x05, A: 0xff},
-			text:   color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff},
+			fill:   color.NRGBA{R: 0xf3, G: 0xec, B: 0xdf, A: 0xff},
+			stroke: color.NRGBA{R: 0xf3, G: 0xec, B: 0xdf, A: 0xff},
+			text:   color.NRGBA{R: 0x74, G: 0x61, B: 0x3f, A: 0xff},
 		}
 	}
 
 	return badgePalette{
-		fill:   color.NRGBA{R: 0x9b, G: 0x62, B: 0x09, A: 0x1f},
-		stroke: color.NRGBA{R: 0xff, G: 0xb1, B: 0x3b, A: 0xff},
-		text:   color.NRGBA{R: 0xff, G: 0xc6, B: 0x69, A: 0xff},
+		fill:   color.NRGBA{R: 0x43, G: 0x39, B: 0x2f, A: 0xff},
+		stroke: color.NRGBA{R: 0x43, G: 0x39, B: 0x2f, A: 0xff},
+		text:   color.NRGBA{R: 0xd4, G: 0xb6, B: 0x90, A: 0xff},
 	}
 }
 
@@ -227,7 +278,7 @@ func newDeviceRow(leading, trailing fyne.Resource) *deviceRow {
 		row.trailing = widget.NewIcon(trailing)
 	}
 
-	center := container.NewBorder(nil, nil, nil, row.badges, row.name)
+	center := container.New(&deviceTitleLayout{}, row.name, row.badges)
 	switch {
 	case row.leading != nil && row.trailing != nil:
 		row.content = container.NewBorder(nil, nil, row.leading, row.trailing, center)
