@@ -45,7 +45,7 @@ func newDeviceList(dd *[]devType) *deviceList {
 	}
 
 	list.CreateItem = func() fyne.CanvasObject {
-		return newDeviceRow(nil, theme.NavigateNextIcon())
+		return newDeviceRow(nil, nil)
 	}
 
 	list.UpdateItem = func(i widget.ListItemID, o fyne.CanvasObject) {
