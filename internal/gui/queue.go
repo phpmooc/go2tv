@@ -407,7 +407,8 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		}
 
 		if screen.queueRemoveButton != nil {
-			if currentSelected && !currentIsActive && !locked {
+			allowActiveRemove := queue != nil && len(queue.Items) == 1
+			if currentSelected && (!currentIsActive || allowActiveRemove) && !locked {
 				screen.queueRemoveButton.Enable()
 			} else {
 				screen.queueRemoveButton.Disable()

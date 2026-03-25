@@ -426,6 +426,28 @@ func TestSingleItemPlaylistButtonStaysNeutral(t *testing.T) {
 	}
 }
 
+func TestSingleActiveQueueItemRemoveButtonEnabled(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	mediaPath := "/tmp/test.mp4"
+	screen := &FyneScreen{
+		mediafile:          mediaPath,
+		queueSelectedIndex: 0,
+		queueRemoveButton:  widget.NewButton("", nil),
+		SessionQueue: newSessionQueue([]QueueItem{
+			{Path: mediaPath, BaseName: "test.mp4", ParentFolder: "/tmp", MediaType: "video"},
+		}, 0),
+	}
+
+	screen.refreshQueueStateUI()
+	fyne.DoAndWait(func() {})
+
+	if screen.queueRemoveButton.Disabled() {
+		t.Fatalf("expected remove button enabled for single active queue item")
+	}
+}
+
 func TestMultiItemPlaylistButtonTurnsProminent(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
