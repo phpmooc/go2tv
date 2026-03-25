@@ -10,6 +10,8 @@ github.com/alexballas/go-ssdp v0.0.3 h1:wTtHib45NtrkYZ/saCaB/2qJ9ci6EWeQFl6imaW4
 github.com/alexballas/go-ssdp v0.0.3/go.mod h1:jUwvJl32BZxBQiRbW5Q0h1QrDGMuA+HRg5qTQvIquJE=
 github.com/alexballas/xfilepicker v0.0.0-20260206213252-e8f58cac8729 h1:nTZMJr0cueO8AMIrHLktnGS/GUpzrJY6IgkuN0ihPPs=
 github.com/alexballas/xfilepicker v0.0.0-20260206213252-e8f58cac8729/go.mod h1:3iVlb7BjvPrChA4y5VhJ4+C7rW08csLbAQCMp45kU/M=
+github.com/alexballas/xfilepicker v0.0.0-20260325155423-826412aa6467 h1:+knDVmnYONYbmoEZ2yv+gDP0QdJqAKt7oPJYe+RAqHs=
+github.com/alexballas/xfilepicker v0.0.0-20260325155423-826412aa6467/go.mod h1:3iVlb7BjvPrChA4y5VhJ4+C7rW08csLbAQCMp45kU/M=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/buger/jsonparser v1.1.2 h1:frqHqw7otoVbk5M8LlE/L7HTnIq2v9RX6EJ48i9AxJk=
