@@ -494,8 +494,8 @@ func (screen *FyneScreen) openQueueWindow() {
 	screen.refreshQueueStateUI()
 
 	if screen.queueWindow != nil {
-		screen.queueWindow.Show()
 		screen.queueWindow.CenterOnScreen()
+		screen.queueWindow.Show()
 	}
 }
 
