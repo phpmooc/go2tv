@@ -192,15 +192,15 @@ func deviceBadgePalette(deviceType string) badgePalette {
 		switch deviceType {
 		case devices.DeviceTypeChromecast:
 			return badgePalette{
-				fill:   color.NRGBA{R: 0xe9, G: 0xf0, B: 0xee, A: 0xff},
-				stroke: color.NRGBA{R: 0xe9, G: 0xf0, B: 0xee, A: 0xff},
-				text:   color.NRGBA{R: 0x44, G: 0x65, B: 0x5c, A: 0xff},
+				fill:   color.NRGBA{R: 0xda, G: 0xee, B: 0xe7, A: 0xff},
+				stroke: color.NRGBA{R: 0xda, G: 0xee, B: 0xe7, A: 0xff},
+				text:   color.NRGBA{R: 0x34, G: 0x6d, B: 0x5f, A: 0xff},
 			}
 		case devices.DeviceTypeDLNA:
 			return badgePalette{
-				fill:   color.NRGBA{R: 0xeb, G: 0xef, B: 0xf7, A: 0xff},
-				stroke: color.NRGBA{R: 0xeb, G: 0xef, B: 0xf7, A: 0xff},
-				text:   color.NRGBA{R: 0x52, G: 0x63, B: 0x84, A: 0xff},
+				fill:   color.NRGBA{R: 0xe2, G: 0xe8, B: 0xfa, A: 0xff},
+				stroke: color.NRGBA{R: 0xe2, G: 0xe8, B: 0xfa, A: 0xff},
+				text:   color.NRGBA{R: 0x46, G: 0x5d, B: 0x96, A: 0xff},
 			}
 		default:
 			return badgePalette{
@@ -214,15 +214,15 @@ func deviceBadgePalette(deviceType string) badgePalette {
 	switch deviceType {
 	case devices.DeviceTypeChromecast:
 		return badgePalette{
-			fill:   color.NRGBA{R: 0x35, G: 0x41, B: 0x3e, A: 0xff},
-			stroke: color.NRGBA{R: 0x35, G: 0x41, B: 0x3e, A: 0xff},
-			text:   color.NRGBA{R: 0xaf, G: 0xc3, B: 0xbc, A: 0xff},
+			fill:   color.NRGBA{R: 0x36, G: 0x47, B: 0x42, A: 0xff},
+			stroke: color.NRGBA{R: 0x36, G: 0x47, B: 0x42, A: 0xff},
+			text:   color.NRGBA{R: 0xbd, G: 0xd4, B: 0xcb, A: 0xff},
 		}
 	case devices.DeviceTypeDLNA:
 		return badgePalette{
-			fill:   color.NRGBA{R: 0x37, G: 0x3c, B: 0x49, A: 0xff},
-			stroke: color.NRGBA{R: 0x37, G: 0x3c, B: 0x49, A: 0xff},
-			text:   color.NRGBA{R: 0xb2, G: 0xbd, B: 0xd8, A: 0xff},
+			fill:   color.NRGBA{R: 0x3a, G: 0x40, B: 0x52, A: 0xff},
+			stroke: color.NRGBA{R: 0x3a, G: 0x40, B: 0x52, A: 0xff},
+			text:   color.NRGBA{R: 0xc3, G: 0xcd, B: 0xe8, A: 0xff},
 		}
 	default:
 		return badgePalette{
@@ -236,16 +236,16 @@ func deviceBadgePalette(deviceType string) badgePalette {
 func audioOnlyBadgePalette() badgePalette {
 	if currentThemeVariant() == theme.VariantLight {
 		return badgePalette{
-			fill:   color.NRGBA{R: 0xf3, G: 0xec, B: 0xdf, A: 0xff},
-			stroke: color.NRGBA{R: 0xf3, G: 0xec, B: 0xdf, A: 0xff},
-			text:   color.NRGBA{R: 0x74, G: 0x61, B: 0x3f, A: 0xff},
+			fill:   color.NRGBA{R: 0xf6, G: 0xea, B: 0xd6, A: 0xff},
+			stroke: color.NRGBA{R: 0xf6, G: 0xea, B: 0xd6, A: 0xff},
+			text:   color.NRGBA{R: 0x83, G: 0x64, B: 0x2f, A: 0xff},
 		}
 	}
 
 	return badgePalette{
-		fill:   color.NRGBA{R: 0x43, G: 0x39, B: 0x2f, A: 0xff},
-		stroke: color.NRGBA{R: 0x43, G: 0x39, B: 0x2f, A: 0xff},
-		text:   color.NRGBA{R: 0xd4, G: 0xb6, B: 0x90, A: 0xff},
+		fill:   color.NRGBA{R: 0x48, G: 0x3c, B: 0x2d, A: 0xff},
+		stroke: color.NRGBA{R: 0x48, G: 0x3c, B: 0x2d, A: 0xff},
+		text:   color.NRGBA{R: 0xe1, G: 0xc0, B: 0x92, A: 0xff},
 	}
 }
 

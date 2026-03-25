@@ -240,9 +240,14 @@ func appendMediaPaths(screen *FyneScreen, paths []string) error {
 
 	screen.replaceSessionQueue(combined, currentIndex)
 	if screen.mediafile == "" {
-		return setCurrentMediaPath(screen, combined[0].Path)
+		if err := setCurrentMediaPath(screen, combined[0].Path); err != nil {
+			return err
+		}
+		screen.scrollQueueListToBottom()
+		return nil
 	}
 
+	screen.scrollQueueListToBottom()
 	return nil
 }
 

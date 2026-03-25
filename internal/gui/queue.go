@@ -24,6 +24,13 @@ const (
 	queueRowThumbHeight float32 = 60
 )
 
+type queueThumbLayout struct{}
+
+type queueRowRenderer struct {
+	row     *queueRow
+	objects []fyne.CanvasObject
+}
+
 type QueueItem struct {
 	Path         string
 	BaseName     string
@@ -435,6 +442,14 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 	screen.refreshTraversalControls()
 }
 
+func (screen *FyneScreen) scrollQueueListToBottom() {
+	fyne.Do(func() {
+		if screen.queueList != nil {
+			screen.queueList.ScrollToBottom()
+		}
+	})
+}
+
 func (screen *FyneScreen) canTraverse(delta int) bool {
 	if screen.mediafile == "" {
 		return false
@@ -725,6 +740,7 @@ type queueRow struct {
 	screen       *FyneScreen
 	index        int
 	currentPath  string
+	thumbPath    string
 	thumbnail    *canvas.Image
 	fallbackIcon *canvas.Image
 	title        *widget.Label
@@ -747,8 +763,8 @@ func newQueueRow(screen *FyneScreen) *queueRow {
 	subtitle := widget.NewLabel("")
 	subtitle.Truncation = fyne.TextTruncateEllipsis
 
-	thumb := container.NewGridWrap(
-		fyne.NewSize(queueRowThumbWidth, queueRowThumbHeight),
+	thumb := container.New(
+		queueThumbLayout{},
 		container.NewStack(
 			thumbnail,
 			fallbackIcon,
@@ -775,7 +791,10 @@ func newQueueRow(screen *FyneScreen) *queueRow {
 }
 
 func (r *queueRow) CreateRenderer() fyne.WidgetRenderer {
-	return widget.NewSimpleRenderer(r.content)
+	return &queueRowRenderer{
+		row:     r,
+		objects: []fyne.CanvasObject{r.content},
+	}
 }
 
 func (r *queueRow) Tapped(*fyne.PointEvent) {
@@ -787,15 +806,11 @@ func (r *queueRow) Tapped(*fyne.PointEvent) {
 }
 
 func (r *queueRow) setRow(index int, item QueueItem, isCurrent bool) {
+	samePath := r.currentPath == item.Path
 	r.index = index
 	r.currentPath = item.Path
 	r.title.SetText(item.BaseName)
 	r.subtitle.SetText(item.ParentFolder)
-	r.thumbnail.File = ""
-	r.thumbnail.Resource = nil
-	r.thumbnail.Image = nil
-	r.thumbnail.Hide()
-	r.fallbackIcon.Show()
 
 	switch item.MediaType {
 	case "audio":
@@ -808,17 +823,32 @@ func (r *queueRow) setRow(index int, item QueueItem, isCurrent bool) {
 		r.fallbackIcon.Resource = theme.FileIcon()
 	}
 
-	if item.MediaType == "image" || item.MediaType == "video" {
-		if img := xfilepicker.GetThumbnailManager().LoadMemoryOnly(item.Path); img != nil {
-			r.applyThumbnail(item.Path, img)
-		} else if item.Path != "" {
-			uri := storage.NewFileURI(item.Path)
-			xfilepicker.GetThumbnailManager().Load(uri, func(img *canvas.Image) {
-				fyne.Do(func() {
-					r.applyThumbnail(item.Path, img)
+	needsThumb := item.MediaType == "image" || item.MediaType == "video"
+	reuseThumb := samePath && r.thumbPath == item.Path && r.thumbnail.Image != nil
+
+	if !reuseThumb {
+		r.thumbnail.File = ""
+		r.thumbnail.Resource = nil
+		r.thumbnail.Image = nil
+		r.thumbPath = ""
+		r.thumbnail.Hide()
+		r.fallbackIcon.Show()
+
+		if needsThumb && item.Path != "" {
+			if img := xfilepicker.GetThumbnailManager().LoadMemoryOnly(item.Path); img != nil {
+				r.applyThumbnail(item.Path, img)
+			} else {
+				uri := storage.NewFileURI(item.Path)
+				xfilepicker.GetThumbnailManager().Load(uri, func(img *canvas.Image) {
+					fyne.Do(func() {
+						r.applyThumbnail(item.Path, img)
+					})
 				})
-			})
+			}
 		}
+	} else {
+		r.thumbnail.Show()
+		r.fallbackIcon.Hide()
 	}
 
 	if isCurrent {
@@ -840,7 +870,70 @@ func (r *queueRow) applyThumbnail(path string, img *canvas.Image) {
 	r.thumbnail.File = ""
 	r.thumbnail.Resource = nil
 	r.thumbnail.Image = img.Image
+	r.thumbPath = path
+	r.updateThumbnailFillMode()
 	r.thumbnail.Refresh()
 	r.thumbnail.Show()
 	r.fallbackIcon.Hide()
+}
+
+func (r *queueRow) updateThumbnailFillMode() {
+	if r.thumbnail == nil || r.thumbnail.Image == nil {
+		return
+	}
+
+	height := r.content.Size().Height
+	if height <= 0 {
+		height = queueRowThumbHeight
+	}
+
+	targetAspect := queueRowThumbWidth / height
+	if targetAspect <= 0 {
+		targetAspect = queueRowThumbWidth / queueRowThumbHeight
+	}
+
+	fillMode := canvas.ImageFillContain
+	if r.thumbnail.Aspect() >= targetAspect {
+		fillMode = canvas.ImageFillCover
+	}
+
+	if r.thumbnail.FillMode == fillMode {
+		return
+	}
+
+	r.thumbnail.FillMode = fillMode
+	r.thumbnail.Refresh()
+}
+
+func (r *queueRowRenderer) Destroy() {}
+
+func (r *queueRowRenderer) Layout(size fyne.Size) {
+	r.row.content.Resize(size)
+	r.row.updateThumbnailFillMode()
+}
+
+func (r *queueRowRenderer) MinSize() fyne.Size {
+	return r.row.content.MinSize()
+}
+
+func (r *queueRowRenderer) Objects() []fyne.CanvasObject {
+	return r.objects
+}
+
+func (r *queueRowRenderer) Refresh() {
+	r.row.updateThumbnailFillMode()
+	canvas.Refresh(r.row.content)
+}
+
+func (queueThumbLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	if len(objects) == 0 {
+		return
+	}
+
+	objects[0].Move(fyne.NewPos(0, 0))
+	objects[0].Resize(size)
+}
+
+func (queueThumbLayout) MinSize([]fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(queueRowThumbWidth, queueRowThumbHeight)
 }
