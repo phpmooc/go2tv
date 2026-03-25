@@ -69,6 +69,7 @@ type FyneScreen struct {
 	MuteUnmute               *widget.Button
 	VolumeDown               *widget.Button
 	selectedDevice           devType
+	activeDevice             devType
 	selectedDeviceType       string
 	chromecastClient         *castprotocol.CastClient // Active Chromecast connection
 	chromecastActionID       uint64
@@ -575,6 +576,30 @@ func (p *FyneScreen) updateScreenState(a string) {
 	})
 }
 
+func (p *FyneScreen) setActiveDevice(device devType) {
+	p.mu.Lock()
+	p.activeDevice = device
+	p.mu.Unlock()
+
+	fyne.Do(func() {
+		if p.DeviceList != nil {
+			p.DeviceList.Refresh()
+		}
+		p.updateActiveDeviceView()
+	})
+}
+
+func (p *FyneScreen) clearActiveDevice() {
+	p.setActiveDevice(devType{})
+}
+
+func (p *FyneScreen) getActiveDevice() devType {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.activeDevice
+}
+
 func (p *FyneScreen) updateActiveDeviceView() {
 	if p.ActiveDeviceCard == nil || p.ActiveDeviceLabel == nil {
 		return
@@ -588,8 +613,9 @@ func (p *FyneScreen) updateActiveDeviceView() {
 		return
 	}
 
-	if p.selectedDevice.name != "" {
-		p.ActiveDeviceLabel.SetText(p.selectedDevice.name)
+	activeDevice := p.getActiveDevice()
+	if activeDevice.name != "" {
+		p.ActiveDeviceLabel.SetText(activeDevice.name)
 		p.ActiveDeviceCard.Show()
 	} else {
 		p.ActiveDeviceCard.Hide()

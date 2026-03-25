@@ -66,45 +66,13 @@ func newDeviceList(s *FyneScreen, dd *[]devType) *deviceList {
 		item := (*dd)[i]
 		row.setDevice(item)
 
-		// Determine if this device is active
+		// Determine if this device owns the active session.
 		isActive := false
 		currentState := s.getScreenState()
 		isActivePlayback := currentState == "Playing" || currentState == "Paused"
-
-		if isActivePlayback {
-			// Prioritize Chromecast if connected
-			// The app logic generally effectively locks to one active session type
-			if s.chromecastClient != nil && s.chromecastClient.IsConnected() {
-				// Check Chromecast
-				if item.deviceType == devices.DeviceTypeChromecast {
-
-					// Chromecast items in list are URLs "http://host:port"
-					// s.chromecastClient.Host() returns just host (IP/hostname)
-
-					// Parse URL using net/url
-					u, err := url.Parse(item.addr)
-					if err == nil {
-						if u.Hostname() == s.chromecastClient.Host() {
-							isActive = true
-						}
-					}
-				}
-			} else if s.tvdata != nil {
-				// Fallback to DLNA if Chromecast is not active
-				// Check DLNA
-				if item.deviceType == devices.DeviceTypeDLNA {
-					// Parse ControlURL to get host
-					u, err := url.Parse(s.tvdata.ControlURL)
-
-					if err == nil {
-						// Parse item address
-						itemURL, err2 := url.Parse(item.addr)
-						if err2 == nil && u.Host == itemURL.Host {
-							isActive = true
-						}
-					}
-				}
-			}
+		activeDevice := s.getActiveDevice()
+		if isActivePlayback && activeDevice.addr != "" {
+			isActive = item.addr == activeDevice.addr && item.deviceType == activeDevice.deviceType
 		}
 
 		// Swap icon based on state

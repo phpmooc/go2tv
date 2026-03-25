@@ -555,6 +555,7 @@ func playAction(screen *FyneScreen) {
 	if screen.cancelEnablePlay != nil {
 		screen.cancelEnablePlay()
 	}
+	sessionDevice := screen.selectedDevice
 
 	ctx, cancelEnablePlay := context.WithTimeout(context.Background(), 3*time.Second)
 	screen.cancelEnablePlay = cancelEnablePlay
@@ -787,6 +788,7 @@ func playAction(screen *FyneScreen) {
 			stopAction(screen)
 			return
 		}
+		screen.setActiveDevice(sessionDevice)
 		if directResumeSeek > 0 && !screen.tvdata.Transcode {
 			screen.applyInitialDLNAResume(screen.tvdata, directResumeSeek)
 		}
@@ -971,6 +973,9 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		}
 	}
 
+	sessionDevice := screen.selectedDevice
+	screen.setActiveDevice(sessionDevice)
+
 	// RTMP wait mechanism
 	if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked {
 		if err := waitForRTMPStream(screen); err != nil {
@@ -1014,7 +1019,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	client := screen.chromecastClient
 	if client == nil || !client.IsConnected() {
 		var err error
-		client, err = castprotocol.NewCastClient(screen.selectedDevice.addr)
+		client, err = castprotocol.NewCastClient(sessionDevice.addr)
 		if err != nil {
 			check(screen, fmt.Errorf("chromecast init: %w", err))
 			startAfreshPlayButton(screen)
@@ -1066,6 +1071,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			}
 			// For live screencast, set UI state immediately on successful load.
 			// Relying only on status polling can leave button text at "Cast" for a while.
+			screen.setActiveDevice(sessionDevice)
 			screen.updateScreenState("Playing")
 			setPlayPauseView("Pause", screen)
 			screen.configureImageAutoSkipTimer(mediaType, screen.mediafile)
@@ -1114,7 +1120,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			// Set casting media type
 			screen.SetMediaType(mediaType)
 
-			if screen.selectedDevice.isAudioOnly && (strings.Contains(mediaType, "video") || strings.Contains(mediaType, "image")) {
+			if sessionDevice.isAudioOnly && (strings.Contains(mediaType, "video") || strings.Contains(mediaType, "image")) {
 				check(screen, errors.New(lang.L("Video/Image file not supported by audio-only device")))
 				startAfreshPlayButton(screen)
 				return
@@ -1122,7 +1128,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		}
 
 		if transcode {
-			whereToListen, err := utils.URLtoListenIPandPort(screen.selectedDevice.addr)
+			whereToListen, err := utils.URLtoListenIPandPort(sessionDevice.addr)
 			if err != nil {
 				check(screen, err)
 				startAfreshPlayButton(screen)
@@ -1228,13 +1234,13 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		// Set casting media type
 		screen.SetMediaType(mediaType)
 
-		if screen.selectedDevice.isAudioOnly && (strings.Contains(mediaType, "video") || strings.Contains(mediaType, "image")) {
+		if sessionDevice.isAudioOnly && (strings.Contains(mediaType, "video") || strings.Contains(mediaType, "image")) {
 			check(screen, errors.New(lang.L("Video/Image file not supported by audio-only device")))
 			startAfreshPlayButton(screen)
 			return
 		}
 
-		whereToListen, err := utils.URLtoListenIPandPort(screen.selectedDevice.addr)
+		whereToListen, err := utils.URLtoListenIPandPort(sessionDevice.addr)
 		if err != nil {
 			check(screen, err)
 			startAfreshPlayButton(screen)
@@ -1333,6 +1339,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		if !screen.isChromecastActionCurrent(actionID) {
 			return
 		}
+		screen.setActiveDevice(sessionDevice)
 		screen.updateScreenState("Playing")
 		setPlayPauseView("Pause", screen)
 		armChromecastImageAutoSkipAfterReady(screen, client, actionID, mediaType, screen.mediafile)
@@ -1550,6 +1557,7 @@ func startAfreshPlayButton(screen *FyneScreen) {
 		screen.cancelEnablePlay()
 	}
 	screen.cancelImageAutoSkipTimer()
+	screen.clearActiveDevice()
 
 	setPlayPauseView("Play", screen)
 	screen.updateScreenState("Stopped")
@@ -1947,6 +1955,7 @@ func stopAction(screen *FyneScreen) {
 
 	screen.nextChromecastActionID()
 	screen.cancelImageAutoSkipTimer()
+	screen.clearActiveDevice()
 
 	setPlayPauseView("Play", screen)
 	screen.updateScreenState("Stopped")
