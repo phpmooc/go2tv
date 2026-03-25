@@ -246,25 +246,33 @@ func (screen *FyneScreen) queueSnapshot() (*SessionQueue, int) {
 	return screen.SessionQueue.clone(), screen.queueSelectedIndex
 }
 
+func (screen *FyneScreen) queueItemCount() int {
+	screen.mu.RLock()
+	defer screen.mu.RUnlock()
+
+	if screen.SessionQueue == nil {
+		return 0
+	}
+
+	return len(screen.SessionQueue.Items)
+}
+
+func (screen *FyneScreen) queueItemForList(index int) (QueueItem, bool) {
+	screen.mu.RLock()
+	defer screen.mu.RUnlock()
+
+	if screen.SessionQueue == nil || index < 0 || index >= len(screen.SessionQueue.Items) {
+		return QueueItem{}, false
+	}
+
+	return screen.SessionQueue.Items[index], screen.mediafile == screen.SessionQueue.Items[index].Path
+}
+
 func (screen *FyneScreen) hasSessionQueue() bool {
 	screen.mu.RLock()
 	defer screen.mu.RUnlock()
 
 	return screen.SessionQueue != nil && len(screen.SessionQueue.Items) > 0
-}
-
-func (screen *FyneScreen) currentQueueItem() (QueueItem, bool) {
-	screen.mu.RLock()
-	defer screen.mu.RUnlock()
-
-	if screen.SessionQueue == nil {
-		return QueueItem{}, false
-	}
-	if screen.SessionQueue.CurrentIndex < 0 || screen.SessionQueue.CurrentIndex >= len(screen.SessionQueue.Items) {
-		return QueueItem{}, false
-	}
-
-	return screen.SessionQueue.Items[screen.SessionQueue.CurrentIndex], true
 }
 
 func (screen *FyneScreen) syncQueueCurrentWithMedia(mediaPath string) {
@@ -491,12 +499,12 @@ func (screen *FyneScreen) openQueueWindow() {
 		screen.buildQueueWindow()
 	}
 
-	screen.refreshQueueStateUI()
-
 	if screen.queueWindow != nil {
 		screen.queueWindow.CenterOnScreen()
 		screen.queueWindow.Show()
 	}
+
+	screen.refreshQueueStateUI()
 }
 
 func (screen *FyneScreen) queueDropMode() droppedMediaMode {
@@ -522,26 +530,20 @@ func (screen *FyneScreen) buildQueueWindow() {
 
 	list := widget.NewList(
 		func() int {
-			queue, _ := screen.queueSnapshot()
-			if queue == nil {
-				return 0
-			}
-
-			return len(queue.Items)
+			return screen.queueItemCount()
 		},
 		func() fyne.CanvasObject {
 			return newQueueRow(screen)
 		},
 		func(id widget.ListItemID, object fyne.CanvasObject) {
-			queue, _ := screen.queueSnapshot()
-			activeIndex := screen.activeQueueIndex(queue)
 			row := object.(*queueRow)
-			if queue == nil || id < 0 || id >= len(queue.Items) {
+			item, isCurrent := screen.queueItemForList(id)
+			if item.Path == "" {
 				row.setRow(id, QueueItem{}, false)
 				return
 			}
 
-			row.setRow(id, queue.Items[id], activeIndex == id)
+			row.setRow(id, item, isCurrent)
 		},
 	)
 	list.OnSelected = func(id widget.ListItemID) {
@@ -840,7 +842,7 @@ func (r *queueRow) setRow(index int, item QueueItem, isCurrent bool) {
 				r.applyThumbnail(item.Path, img)
 			} else {
 				uri := storage.NewFileURI(item.Path)
-				xfilepicker.GetThumbnailManager().Load(uri, func(img *canvas.Image) {
+				go xfilepicker.GetThumbnailManager().Load(uri, func(img *canvas.Image) {
 					fyne.Do(func() {
 						r.applyThumbnail(item.Path, img)
 					})

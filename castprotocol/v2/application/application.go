@@ -1317,19 +1317,8 @@ func (a *Application) sendMediaRecv(payload cast.Payload) error {
 	return err
 }
 
-func (a *Application) sendAndWaitDefaultConn(payload cast.Payload) (*pb.CastMessage, error) {
-	return a.sendAndWait(payload, defaultSender, defaultRecv, namespaceConn)
-}
-
 func (a *Application) sendAndWaitDefaultRecv(payload cast.Payload) (*pb.CastMessage, error) {
 	return a.sendAndWait(payload, defaultSender, defaultRecv, namespaceRecv)
-}
-
-func (a *Application) sendAndWaitMediaConn(payload cast.Payload) (*pb.CastMessage, error) {
-	if a.application == nil {
-		return nil, ErrApplicationNotSet
-	}
-	return a.sendAndWait(payload, defaultSender, a.application.TransportId, namespaceConn)
 }
 
 func (a *Application) sendAndWaitMediaRecv(payload cast.Payload) (*pb.CastMessage, error) {

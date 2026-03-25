@@ -399,17 +399,6 @@ func getInternalSubsDropdownOptions(screen *FyneScreen, mediaFile string) ([]str
 	return subs, true
 }
 
-func refreshInternalSubsDropdown(screen *FyneScreen, mediaFile string) bool {
-	subs, ok := getInternalSubsDropdownOptions(screen, mediaFile)
-	if !ok {
-		setInternalSubsDropdownNoSubs(screen)
-		return false
-	}
-
-	setInternalSubsDropdownWithSubs(screen, subs)
-	return true
-}
-
 // updateInternalSubsDropdown refreshes the embedded subtitles dropdown
 // for the given media file. Should be called when media file changes
 // (e.g., via Next button or auto-play).

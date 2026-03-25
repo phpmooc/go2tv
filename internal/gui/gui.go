@@ -616,12 +616,6 @@ func (p *FyneScreen) isChromecastActionCurrent(actionID uint64) bool {
 	return p.chromecastActionID == actionID
 }
 
-func (p *FyneScreen) currentChromecastActionID() uint64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.chromecastActionID
-}
-
 func normalizeChromecastWatcherContext(ctx context.Context) context.Context {
 	if ctx != nil {
 		return ctx
