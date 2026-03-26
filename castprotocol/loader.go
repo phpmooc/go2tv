@@ -127,15 +127,12 @@ func (p *LaunchRequest) SetRequestId(id int) {
 	p.RequestId = id
 }
 
-// DefaultMediaReceiverAppID is the app ID for the Default Media Receiver
-const DefaultMediaReceiverAppID = "CC1AD845"
-
 // LaunchDefaultReceiver launches the Default Media Receiver app without loading media.
 // This allows sending a LoadWithSubtitles command afterwards.
 func LaunchDefaultReceiver(conn cast.Conn) error {
 	payload := &LaunchRequest{
 		Type:  "LAUNCH",
-		AppId: DefaultMediaReceiverAppID,
+		AppId: cast.DefaultMediaReceiverAppID,
 	}
 
 	requestID := nextRequestID()

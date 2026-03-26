@@ -6,9 +6,11 @@
 Package api is a generated protocol buffer package.
 
 It is generated from these files:
+
 	api/cast_channel.proto
 
 It has these top-level messages:
+
 	CastMessage
 	AuthChallenge
 	AuthResponse
@@ -17,9 +19,12 @@ It has these top-level messages:
 */
 package api
 
-import proto "github.com/gogo/protobuf/proto"
-import json "encoding/json"
-import math "math"
+import (
+	"encoding/json"
+	"math"
+
+	"github.com/gogo/protobuf/proto"
+)
 
 // Reference proto, json, and math imports to suppress error if they are not otherwise used.
 var _ = proto.Marshal

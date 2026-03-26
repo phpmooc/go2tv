@@ -2,9 +2,10 @@ package playlists
 
 import (
 	"fmt"
-	"gopkg.in/ini.v1"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/ini.v1"
 )
 
 type Iterator interface {

@@ -3,7 +3,6 @@
 package gui
 
 import (
-	"context"
 	"testing"
 )
 
@@ -12,8 +11,7 @@ func TestNormalizeChromecastWatcherContextFallsBackToBackground(t *testing.T) {
 		t.Fatal("expected fallback context")
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	if got := normalizeChromecastWatcherContext(ctx); got != ctx {
 		t.Fatal("expected existing context to be preserved")

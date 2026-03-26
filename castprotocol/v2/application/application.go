@@ -15,17 +15,16 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
-	"github.com/h2non/filetype"
+	"path/filepath"
 
 	"github.com/buger/jsonparser"
+	"github.com/h2non/filetype"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"go2tv.app/go2tv/v2/castprotocol/v2/cast"
 	pb "go2tv.app/go2tv/v2/castprotocol/v2/cast/proto"
 	"go2tv.app/go2tv/v2/castprotocol/v2/playlists"
 	"go2tv.app/go2tv/v2/castprotocol/v2/storage"
-	"path/filepath"
 )
 
 var (
@@ -35,10 +34,6 @@ var (
 )
 
 const (
-	// 'CC1AD845' seems to be a predefined app; check link
-	// https://gist.github.com/jloutsenhizer/8855258
-	defaultChromecastAppID = "CC1AD845"
-
 	defaultSender = "sender-0"
 	defaultRecv   = "receiver-0"
 
@@ -601,8 +596,8 @@ func (a *Application) Seek(value int) error {
 	// TODO: find a better way to handle when chromecast
 	// apps don't handle certain commands.
 	appsSeekTo := []string{
-		"9AC194DC", // Plex
-		"CC1AD845", // Default media
+		"9AC194DC",                     // Plex
+		cast.DefaultMediaReceiverAppID, // Default media
 	}
 
 	if slices.Contains(appsSeekTo, a.application.AppId) {
@@ -958,7 +953,7 @@ func (a *Application) QueueLoadItems(mediaItems []mediaItem, contentType string)
 func (a *Application) ensureIsDefaultMediaReceiver() error {
 	// If the current chromecast application isn't the Default Media Receiver
 	// we need to change it.
-	return a.ensureIsAppID(defaultChromecastAppID)
+	return a.ensureIsAppID(cast.DefaultMediaReceiverAppID)
 }
 
 func (a *Application) ensureIsAppID(appID string) error {
