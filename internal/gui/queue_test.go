@@ -118,7 +118,7 @@ func TestGetNextAutoPlayMediaWrapsSameTypeOnly(t *testing.T) {
 	}
 }
 
-func TestGetNextAutoPlayMediaStopsWithoutMatchingWrapCandidate(t *testing.T) {
+func TestGetNextAutoPlayMediaStopsWithoutWrapCandidate(t *testing.T) {
 	dir := t.TempDir()
 	videoOne := filepath.Join(dir, "01.mp4")
 	audioOne := filepath.Join(dir, "02.mp3")
@@ -353,7 +353,7 @@ func TestDroppedMediaBlockedErrorForAppendMode(t *testing.T) {
 	}
 }
 
-func TestRemoveSelectedQueueItemClearsCurrentWhenLastItemRemoved(t *testing.T) {
+func TestRemoveSelectedQueueItemClearsCurrentOnLastRemove(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 
@@ -514,7 +514,7 @@ func TestRecordQueueUIStateSkipsDuplicateRefreshes(t *testing.T) {
 	}
 }
 
-func TestQueueRowAvoidsDuplicateThumbnailRequestsForPendingPath(t *testing.T) {
+func TestQueueRowDedupesThumbnailRequests(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()
 

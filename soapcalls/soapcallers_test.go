@@ -143,7 +143,7 @@ func TestSetVolumeSoapCallMPostFallbackOn405(t *testing.T) {
 	}
 }
 
-func TestSetAVTransportSoapCallRetriesWithLegacyMetadataOnFault(t *testing.T) {
+func TestSetAVTransportSoapRetriesWithLegacyMetadata(t *testing.T) {
 	var (
 		mu       sync.Mutex
 		requests []string
@@ -205,7 +205,7 @@ func TestSetAVTransportSoapCallRetriesWithLegacyMetadataOnFault(t *testing.T) {
 	}
 }
 
-func TestSetAVTransportSoapCallStopsAndRetriesOnTransitionNotAvailable(t *testing.T) {
+func TestSetAVTransportSoapRetriesOnTransitionNotAvailable(t *testing.T) {
 	type requestCapture struct {
 		action string
 		body   string

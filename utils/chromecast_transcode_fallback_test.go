@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestServeChromecastTranscodedStreamRuntimeHardwareFallback(t *testing.T) {
+func TestServeChromecastTranscodedStreamHardwareFallback(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell-script fake ffmpeg test skipped on windows")
 	}

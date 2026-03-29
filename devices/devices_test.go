@@ -9,7 +9,7 @@ import (
 	"go2tv.app/go2tv/v2/soapcalls"
 )
 
-func TestLoadSSDPservicesDetectsFromNonAVTransportST(t *testing.T) {
+func TestLoadSSDPServicesDetectsNonAVTransportST(t *testing.T) {
 	origSearch := ssdpSearch
 	origLoad := loadDevicesFromLocation
 	t.Cleanup(func() {
@@ -58,7 +58,7 @@ func TestLoadSSDPservicesDetectsFromNonAVTransportST(t *testing.T) {
 	}
 }
 
-func TestLoadSSDPservicesFiltersDevicesMissingConnectionManager(t *testing.T) {
+func TestLoadSSDPServicesFiltersMissingConnectionManager(t *testing.T) {
 	origSearch := ssdpSearch
 	origLoad := loadDevicesFromLocation
 	t.Cleanup(func() {

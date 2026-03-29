@@ -38,7 +38,7 @@ func selectTranscodeVideoEncoder(ffmpegPath string, profile videoEncoderProfile)
 		return cached.(videoEncoderPlan)
 	}
 
-	plan := selectTranscodeVideoEncoderUncached(ffmpegPath, profile)
+	plan := selectTranscodeEncoderNoCache(ffmpegPath, profile)
 	transcodeVideoEncoderCache.Store(key, plan)
 
 	return plan
@@ -48,7 +48,7 @@ func transcodeEncoderCacheKey(ffmpegPath string, profile videoEncoderProfile) st
 	return ffmpegPath + "|" + string(profile)
 }
 
-func selectTranscodeVideoEncoderUncached(ffmpegPath string, profile videoEncoderProfile) videoEncoderPlan {
+func selectTranscodeEncoderNoCache(ffmpegPath string, profile videoEncoderProfile) videoEncoderPlan {
 	software := transcodeSoftwareEncoderPlan(profile)
 	candidates := transcodeHardwareEncoderCandidates(profile)
 	if len(candidates) == 0 {

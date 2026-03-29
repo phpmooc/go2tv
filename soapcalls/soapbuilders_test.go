@@ -360,7 +360,7 @@ func TestSetAVTransportSoapBuildEscapesAmpersand(t *testing.T) {
 	}
 }
 
-func TestSetAVTransportSoapBuildEscapesTitleMarkupWithoutStripping(t *testing.T) {
+func TestSetAVTransportSoapBuildEscapesTitleMarkup(t *testing.T) {
 	tv := &TVPayload{
 		MediaURL:  "http://192.168.88.250:3500/%3Ctitle%3E%5Cclip.mp4",
 		MediaType: "video/mp4",
@@ -378,7 +378,7 @@ func TestSetAVTransportSoapBuildEscapesTitleMarkupWithoutStripping(t *testing.T)
 	}
 }
 
-func TestSetAVTransportSoapBuildLegacyMetadataCompat(t *testing.T) {
+func TestSetAVTransportSoapBuildLegacyCompat(t *testing.T) {
 	tv := &TVPayload{
 		MediaURL:  `http://192.168.88.250:3500/video%20%26%20%27example%27.mp4`,
 		MediaType: "video/mp4",
@@ -400,7 +400,7 @@ func TestSetAVTransportSoapBuildLegacyMetadataCompat(t *testing.T) {
 	}
 }
 
-func TestSetAVTransportSoapBuildLegacyMetadataCompatKeepsCurrentURIXMLEscaped(t *testing.T) {
+func TestSetAVTransportSoapBuildLegacyCompatEscapesCurrentURI(t *testing.T) {
 	tv := &TVPayload{
 		MediaURL:  "http://192.168.88.250:3500/video.mp4?foo=1&bar=2",
 		MediaType: "video/mp4",

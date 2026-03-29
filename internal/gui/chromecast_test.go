@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestNormalizeChromecastWatcherContextFallsBackToBackground(t *testing.T) {
+func TestNormalizeChromecastWatcherContextUsesBackground(t *testing.T) {
 	if normalizeChromecastWatcherContext(nil) == nil {
 		t.Fatal("expected fallback context")
 	}
@@ -18,7 +18,7 @@ func TestNormalizeChromecastWatcherContextFallsBackToBackground(t *testing.T) {
 	}
 }
 
-func TestNextChromecastActionIDAdvancesTrackingGeneration(t *testing.T) {
+func TestNextChromecastActionIDAdvancesGeneration(t *testing.T) {
 	screen := &FyneScreen{chromecastActionID: 21}
 
 	actionID := screen.nextChromecastActionID()
