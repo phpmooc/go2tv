@@ -130,6 +130,9 @@ type FyneScreen struct {
 	queueMoveDownButton      *widget.Button
 	queueClearButton         *widget.Button
 	queueSelectedIndex       int
+	queueRevision            uint64
+	lastQueueUIState         queueUIState
+	queueUIStateValid        bool
 	lastQueueTapIndex        int
 	lastQueueTapAt           time.Time
 	ActiveDeviceLabel        *widget.Label

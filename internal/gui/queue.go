@@ -43,6 +43,19 @@ type SessionQueue struct {
 	CurrentIndex int
 }
 
+type queueUIState struct {
+	revision         uint64
+	queueLen         int
+	selectedIndex    int
+	activeIndex      int
+	buttonText       string
+	buttonImportance widget.Importance
+	statusText       string
+	detailsText      string
+	locked           bool
+	list             *widget.List
+}
+
 func newSessionQueue(items []QueueItem, currentIndex int) *SessionQueue {
 	if len(items) == 0 {
 		return nil
@@ -200,6 +213,10 @@ func (screen *FyneScreen) buildQueueItems(paths []string) []QueueItem {
 	return items
 }
 
+func (screen *FyneScreen) bumpQueueRevisionLocked() {
+	screen.queueRevision++
+}
+
 func (screen *FyneScreen) replaceSessionQueue(items []QueueItem, currentIndex int) {
 	screen.mu.Lock()
 	if len(items) == 0 {
@@ -213,8 +230,8 @@ func (screen *FyneScreen) replaceSessionQueue(items []QueueItem, currentIndex in
 			screen.queueSelectedIndex = 0
 		}
 	}
+	screen.bumpQueueRevisionLocked()
 	screen.mu.Unlock()
-
 	screen.prewarmQueueThumbnails(items)
 	screen.refreshQueueStateUI()
 }
@@ -235,7 +252,6 @@ func (screen *FyneScreen) prewarmQueueThumbnails(items []QueueItem) {
 	if len(uris) == 0 {
 		return
 	}
-
 	xfilepicker.GetThumbnailManager().PrewarmDirectory(uris)
 }
 
@@ -244,6 +260,13 @@ func (screen *FyneScreen) queueSnapshot() (*SessionQueue, int) {
 	defer screen.mu.RUnlock()
 
 	return screen.SessionQueue.clone(), screen.queueSelectedIndex
+}
+
+func (screen *FyneScreen) queueRenderSnapshot() (*SessionQueue, int, uint64, *widget.List) {
+	screen.mu.RLock()
+	defer screen.mu.RUnlock()
+
+	return screen.SessionQueue.clone(), screen.queueSelectedIndex, screen.queueRevision, screen.queueList
 }
 
 func (screen *FyneScreen) queueItemCount() int {
@@ -285,6 +308,7 @@ func (screen *FyneScreen) syncQueueCurrentWithMedia(mediaPath string) {
 
 	if screen.SessionQueue.setCurrentByPath(mediaPath) {
 		screen.queueSelectedIndex = screen.SessionQueue.CurrentIndex
+		screen.bumpQueueRevisionLocked()
 	}
 }
 
@@ -297,6 +321,7 @@ func (screen *FyneScreen) clearQueueCurrent() {
 	}
 
 	screen.SessionQueue.CurrentIndex = -1
+	screen.bumpQueueRevisionLocked()
 }
 
 func (screen *FyneScreen) setQueueSelectedIndex(index int) {
@@ -342,7 +367,7 @@ func (screen *FyneScreen) queueInteractionsLocked() bool {
 }
 
 func (screen *FyneScreen) refreshQueueStateUI() {
-	queue, selectedIndex := screen.queueSnapshot()
+	queue, selectedIndex, queueRevision, queueList := screen.queueRenderSnapshot()
 	activeIndex := screen.activeQueueIndex(queue)
 	statusText := ""
 	buttonText := screen.queueButtonText(queue, activeIndex)
@@ -359,6 +384,28 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 		if len(queue.Items) > 1 {
 			buttonImportance = widget.HighImportance
 		}
+	}
+
+	queueLen := 0
+	if queue != nil {
+		queueLen = len(queue.Items)
+	}
+
+	state := queueUIState{
+		revision:         queueRevision,
+		queueLen:         queueLen,
+		selectedIndex:    selectedIndex,
+		activeIndex:      activeIndex,
+		buttonText:       buttonText,
+		buttonImportance: buttonImportance,
+		statusText:       statusText,
+		detailsText:      detailsText,
+		locked:           locked,
+		list:             queueList,
+	}
+	if !screen.recordQueueUIState(state) {
+		screen.refreshTraversalControls()
+		return
 	}
 
 	fyne.Do(func() {
@@ -449,6 +496,19 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 	})
 
 	screen.refreshTraversalControls()
+}
+
+func (screen *FyneScreen) recordQueueUIState(state queueUIState) bool {
+	screen.mu.Lock()
+	defer screen.mu.Unlock()
+
+	if screen.queueUIStateValid && screen.lastQueueUIState == state {
+		return false
+	}
+
+	screen.lastQueueUIState = state
+	screen.queueUIStateValid = true
+	return true
 }
 
 func (screen *FyneScreen) scrollQueueListToBottom() {
@@ -667,7 +727,6 @@ func (screen *FyneScreen) handleQueueRowTap(index int) {
 	screen.lastQueueTapAt = now
 	screen.queueSelectedIndex = index
 	screen.mu.Unlock()
-
 	screen.refreshQueueStateUI()
 	if activate {
 		screen.activateSelectedQueueItem()
@@ -694,6 +753,7 @@ func (screen *FyneScreen) removeSelectedQueueItem() {
 		screen.SessionQueue.Items[:selectedIndex],
 		screen.SessionQueue.Items[selectedIndex+1:]...,
 	)
+	screen.bumpQueueRevisionLocked()
 
 	if len(screen.SessionQueue.Items) == 0 {
 		screen.SessionQueue = nil
@@ -728,6 +788,7 @@ func (screen *FyneScreen) moveSelectedQueueItem(delta int) {
 	}
 
 	screen.queueSelectedIndex = screen.SessionQueue.move(screen.queueSelectedIndex, delta)
+	screen.bumpQueueRevisionLocked()
 	screen.mu.Unlock()
 
 	screen.refreshQueueStateUI()
@@ -740,16 +801,18 @@ func (screen *FyneScreen) clearSessionQueueAction() {
 
 type queueRow struct {
 	widget.BaseWidget
-	screen       *FyneScreen
-	index        int
-	currentPath  string
-	thumbPath    string
-	thumbnail    *canvas.Image
-	fallbackIcon *canvas.Image
-	title        *widget.Label
-	subtitle     *widget.Label
-	currentIcon  *widget.Icon
-	content      fyne.CanvasObject
+	screen             *FyneScreen
+	index              int
+	currentPath        string
+	thumbPath          string
+	pendingThumbPath   string
+	thumbnailRequestID uint64
+	thumbnail          *canvas.Image
+	fallbackIcon       *canvas.Image
+	title              *widget.Label
+	subtitle           *widget.Label
+	currentIcon        *widget.Icon
+	content            fyne.CanvasObject
 }
 
 func newQueueRow(screen *FyneScreen) *queueRow {
@@ -815,6 +878,11 @@ func (r *queueRow) setRow(index int, item QueueItem, isCurrent bool) {
 	r.title.SetText(item.BaseName)
 	r.subtitle.SetText(item.ParentFolder)
 
+	if !samePath {
+		r.thumbnailRequestID++
+		r.pendingThumbPath = ""
+	}
+
 	switch item.MediaType {
 	case "audio":
 		r.fallbackIcon.Resource = theme.FileAudioIcon()
@@ -839,17 +907,27 @@ func (r *queueRow) setRow(index int, item QueueItem, isCurrent bool) {
 
 		if needsThumb && item.Path != "" {
 			if img := xfilepicker.GetThumbnailManager().LoadMemoryOnly(item.Path); img != nil {
+				r.pendingThumbPath = ""
 				r.applyThumbnail(item.Path, img)
-			} else {
+			} else if r.pendingThumbPath != item.Path {
+				r.thumbnailRequestID++
+				requestID := r.thumbnailRequestID
+				r.pendingThumbPath = item.Path
 				uri := storage.NewFileURI(item.Path)
+				path := item.Path
 				go xfilepicker.GetThumbnailManager().Load(uri, func(img *canvas.Image) {
 					fyne.Do(func() {
-						r.applyThumbnail(item.Path, img)
+						if r.currentPath != path || r.pendingThumbPath != path || r.thumbnailRequestID != requestID {
+							return
+						}
+						r.pendingThumbPath = ""
+						r.applyThumbnail(path, img)
 					})
 				})
 			}
 		}
 	} else {
+		r.pendingThumbPath = ""
 		r.thumbnail.Show()
 		r.fallbackIcon.Hide()
 	}
@@ -869,7 +947,6 @@ func (r *queueRow) applyThumbnail(path string, img *canvas.Image) {
 	if img == nil || r.currentPath != path {
 		return
 	}
-
 	r.thumbnail.File = ""
 	r.thumbnail.Resource = nil
 	r.thumbnail.Image = img.Image

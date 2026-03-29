@@ -3,6 +3,7 @@
 package gui
 
 import (
+	"container/ring"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -467,5 +468,93 @@ func TestMultiItemPlaylistButtonTurnsProminent(t *testing.T) {
 
 	if screen.QueueButton.Importance != widget.HighImportance {
 		t.Fatalf("expected multi-item playlist button to become prominent, got %v", screen.QueueButton.Importance)
+	}
+}
+
+func TestRecordQueueUIStateSkipsDuplicateRefreshes(t *testing.T) {
+	screen := &FyneScreen{}
+	listOne := widget.NewList(
+		func() int { return 0 },
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(widget.ListItemID, fyne.CanvasObject) {},
+	)
+	listTwo := widget.NewList(
+		func() int { return 0 },
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(widget.ListItemID, fyne.CanvasObject) {},
+	)
+
+	state := queueUIState{
+		revision:         7,
+		queueLen:         32,
+		selectedIndex:    2,
+		activeIndex:      2,
+		buttonText:       "Playlist 3/32",
+		buttonImportance: widget.HighImportance,
+		statusText:       "Playlist 3/32",
+		detailsText:      "/tmp/three.mp4",
+		list:             listOne,
+	}
+
+	if !screen.recordQueueUIState(state) {
+		t.Fatal("expected first queue UI state to be recorded")
+	}
+	if screen.recordQueueUIState(state) {
+		t.Fatal("expected identical queue UI state to be skipped")
+	}
+
+	state.revision++
+	if !screen.recordQueueUIState(state) {
+		t.Fatal("expected queue revision change to force refresh")
+	}
+
+	state.list = listTwo
+	if !screen.recordQueueUIState(state) {
+		t.Fatal("expected new queue list instance to force refresh")
+	}
+}
+
+func TestQueueRowAvoidsDuplicateThumbnailRequestsForPendingPath(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dir := t.TempDir()
+	firstPath := filepath.Join(dir, "first.mp4")
+	secondPath := filepath.Join(dir, "second.mp4")
+
+	row := newQueueRow(&FyneScreen{
+		Debug: &debugWriter{ring: ring.New(8)},
+	})
+
+	first := QueueItem{
+		Path:         firstPath,
+		BaseName:     filepath.Base(firstPath),
+		ParentFolder: dir,
+		MediaType:    "video",
+	}
+	second := QueueItem{
+		Path:         secondPath,
+		BaseName:     filepath.Base(secondPath),
+		ParentFolder: dir,
+		MediaType:    "video",
+	}
+
+	row.setRow(0, first, false)
+	firstRequestID := row.thumbnailRequestID
+	if row.pendingThumbPath != first.Path {
+		t.Fatalf("expected pending thumbnail path %q, got %q", first.Path, row.pendingThumbPath)
+	}
+
+	row.setRow(0, first, false)
+	if row.thumbnailRequestID != firstRequestID {
+		t.Fatalf("expected duplicate pending thumbnail request to be skipped, got request id %d want %d", row.thumbnailRequestID, firstRequestID)
+	}
+
+	row.setRow(0, second, false)
+	if row.thumbnailRequestID == firstRequestID {
+		t.Fatal("expected path change to invalidate and replace pending thumbnail request")
+	}
+	if row.pendingThumbPath != second.Path {
+		t.Fatalf("expected pending thumbnail path %q after path change, got %q", second.Path, row.pendingThumbPath)
 	}
 }
