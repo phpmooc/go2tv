@@ -22,6 +22,7 @@ import (
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/crashlog"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
 )
@@ -54,18 +55,30 @@ type flagResults struct {
 }
 
 func main() {
-	if err := run(); err != nil {
-		if errors.Is(err, errNoflag) {
+	crash, err := crashlog.Init("go2tv")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: crash logging disabled: %v\n", err)
+	}
+
+	runErr := run(crash)
+	if crash != nil {
+		if err := crash.CloseClean(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to clean crash log state: %v\n", err)
+		}
+	}
+
+	if runErr != nil {
+		if errors.Is(runErr, errNoflag) {
 			flag.Usage()
 			os.Exit(0)
 		}
 
-		fmt.Fprintf(os.Stderr, "Encountered error(s): %s\n", err)
+		fmt.Fprintf(os.Stderr, "Encountered error(s): %s\n", runErr)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(crash *crashlog.Session) error {
 	var (
 		absMediaFile, mediaType string
 		mediaFile               any
@@ -85,6 +98,10 @@ func run() error {
 
 	if flagRes.exit {
 		return nil
+	}
+
+	if crash != nil && crash.PreviousCrashPath() != "" {
+		fmt.Fprintf(os.Stderr, "Previous crash report: %s\n", crash.PreviousCrashPath())
 	}
 
 	if *mediaArg != "" {

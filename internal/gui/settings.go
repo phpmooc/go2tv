@@ -194,51 +194,8 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		s.ffmpegPathChanged = true
 	}
 
-	debugExport := widget.NewButton(lang.L("Export Debug Logs"), func() {
-		var itemInRing bool
-		s.Debug.ring.Do(func(p any) {
-			if p != nil {
-				itemInRing = true
-			}
-		})
-
-		if !itemInRing {
-			fynedialog.ShowInformation(lang.L("Debug"), lang.L("Debug logs are empty"), w)
-			return
-		}
-
-		var resumeHotkeys func()
-		fd := xfilepicker.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
-			if resumeHotkeys != nil {
-				defer resumeHotkeys()
-			}
-			if err != nil {
-				fynedialog.ShowError(err, s.Current)
-				return
-			}
-			if writer == nil {
-				return
-			}
-
-			saveDebugLogs(writer, s)
-		}, s.Current)
-
-		if f, ok := fd.(interface{ SetFileName(string) }); ok {
-			f.SetFileName("go2tv-debug.log")
-		}
-
-		if f, ok := fd.(xfilepicker.FilePicker); ok {
-			cwd, err := os.Getwd()
-			if err == nil {
-				if lister, listerErr := storage.ListerForURI(storage.NewFileURI(cwd)); listerErr == nil {
-					f.SetLocation(lister)
-				}
-			}
-		}
-
-		resumeHotkeys = suspendHotkeys(s)
-		fd.Show()
-		fd.Resize(fyne.NewSize(filePickerFillSize, filePickerFillSize))
+	debugExport := widget.NewButton(lang.L("Export Diagnostics"), func() {
+		showDiagnosticsSaveDialog(s)
 	})
 
 	gaplessdropdown := widget.NewSelect([]string{lang.L("Enabled"), lang.L("Disabled")}, func(ss string) {
@@ -384,7 +341,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	)
 
 	debugSettings := container.NewVBox(
-		newSettingsField(lang.L("Debug"), debugExport),
+		newSettingsField(lang.L("Diagnostics"), debugExport),
 	)
 
 	leftColumn := container.NewBorder(
@@ -399,26 +356,63 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		nil,
 		nil,
 		nil,
-		widget.NewCard(lang.L("Debug"), "", debugSettings),
+		widget.NewCard(lang.L("Diagnostics"), "", debugSettings),
 	)
 	settingsCategories := container.NewGridWithColumns(2, leftColumn, rightColumn)
 
 	return container.NewVScroll(settingsCategories)
 }
 
-func saveDebugLogs(f fyne.URIWriteCloser, s *FyneScreen) {
+func showDiagnosticsSaveDialog(s *FyneScreen) {
+	if !diagnosticsAvailable(s) {
+		fynedialog.ShowInformation(lang.L("Diagnostics"), lang.L("No diagnostics available"), s.Current)
+		return
+	}
+
+	var resumeHotkeys func()
+	fd := xfilepicker.NewFileSave(func(writer fyne.URIWriteCloser, err error) {
+		if resumeHotkeys != nil {
+			defer resumeHotkeys()
+		}
+		if err != nil {
+			fynedialog.ShowError(err, s.Current)
+			return
+		}
+		if writer == nil {
+			return
+		}
+
+		saveDiagnostics(writer, s)
+	}, s.Current)
+
+	if f, ok := fd.(interface{ SetFileName(string) }); ok {
+		f.SetFileName(diagnosticsFileName())
+	}
+
+	if f, ok := fd.(xfilepicker.FilePicker); ok {
+		cwd, err := os.Getwd()
+		if err == nil {
+			if lister, listerErr := storage.ListerForURI(storage.NewFileURI(cwd)); listerErr == nil {
+				f.SetLocation(lister)
+			}
+		}
+	}
+
+	resumeHotkeys = suspendHotkeys(s)
+	fd.Show()
+	fd.Resize(fyne.NewSize(filePickerFillSize, filePickerFillSize))
+}
+
+func saveDiagnostics(f fyne.URIWriteCloser, s *FyneScreen) {
 	w := s.Current
 	defer f.Close()
 
-	s.Debug.ring.Do(func(p any) {
-		if p != nil {
-			_, err := f.Write([]byte(p.(string)))
-			if err != nil {
-				fynedialog.ShowError(err, w)
-			}
-		}
-	})
-	fynedialog.ShowInformation(lang.L("Debug"), lang.L("Saved to")+"... "+f.URI().String(), w)
+	if err := writeDiagnostics(f, s); err != nil {
+		fynedialog.ShowError(err, w)
+		return
+	}
+
+	fynedialog.ShowInformation(lang.L("Diagnostics"), lang.L("Saved to")+"... "+f.URI().String(), w)
 }
 
 func parseTheme(s *FyneScreen) func(string) {

@@ -5,6 +5,7 @@ package gui
 import (
 	"container/ring"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/crashlog"
 	"go2tv.app/go2tv/v2/soapcalls"
 )
 
@@ -63,6 +65,8 @@ type FyneScreen struct {
 	Medialoop            bool
 	castingMediaType     string // MIME type of currently casting media
 	hotkeysSuspendCount  int32
+	Crash                *crashlog.Session
+	PendingCrashPath     string
 }
 
 type debugWriter struct {
@@ -82,6 +86,42 @@ func (f *debugWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+func newDebugWriter() *debugWriter {
+	return &debugWriter{ring: ring.New(1000)}
+}
+
+func hasDebugLogs(dw *debugWriter) bool {
+	if dw == nil || dw.ring == nil {
+		return false
+	}
+
+	var itemInRing bool
+	dw.ring.Do(func(p any) {
+		if p != nil {
+			itemInRing = true
+		}
+	})
+
+	return itemInRing
+}
+
+func writeDebugLogs(w io.Writer, dw *debugWriter) error {
+	if dw == nil || dw.ring == nil {
+		return nil
+	}
+
+	var writeErr error
+	dw.ring.Do(func(p any) {
+		if p == nil || writeErr != nil {
+			return
+		}
+
+		_, writeErr = io.WriteString(w, p.(string))
+	})
+
+	return writeErr
+}
+
 // Start .
 func Start(ctx context.Context, s *FyneScreen) {
 	w := s.Current
@@ -96,6 +136,14 @@ func Start(ctx context.Context, s *FyneScreen) {
 	// Start Chromecast discovery in background
 	go devices.StartChromecastDiscoveryLoop(ctx)
 
+	if app := fyne.CurrentApp(); app != nil {
+		app.Lifecycle().SetOnStopped(func() {
+			if s.Crash != nil {
+				_ = s.Crash.CloseClean()
+			}
+		})
+	}
+
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Go2TV", container.NewVScroll(container.NewPadded(mainWindow(s)))),
 		container.NewTabItem("About", container.NewVScroll(aboutWindow(s))),
@@ -106,10 +154,14 @@ func Start(ctx context.Context, s *FyneScreen) {
 
 	go func() {
 		<-ctx.Done()
+		if s.Crash != nil {
+			_ = s.Crash.CloseClean()
+		}
 		os.Exit(0)
 	}()
 
 	go silentCheckVersion(s)
+	showPendingCrashPopup(s)
 
 	w.ShowAndRun()
 }
@@ -226,17 +278,21 @@ func setMuteUnmuteView(s string, screen *FyneScreen) {
 }
 
 // NewFyneScreen .
-func NewFyneScreen(version string) *FyneScreen {
+func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 	go2tv := app.NewWithID("app.go2tv.go2tv")
 	go2tv.Settings().SetTheme(go2tvTheme{"Dark"})
 	go2tv.Driver().SetDisableScreenBlanking(true)
 
 	w := go2tv.NewWindow("Go2TV")
+	dw := newDebugWriter()
 
 	return &FyneScreen{
-		Current:      w,
-		mediaFormats: []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
-		version:      version,
+		Current:          w,
+		Debug:            dw,
+		mediaFormats:     []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
+		version:          version,
+		Crash:            crash,
+		PendingCrashPath: crashPath(crash),
 	}
 }
 

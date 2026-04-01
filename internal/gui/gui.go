@@ -7,6 +7,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,6 +29,7 @@ import (
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/crashlog"
 	"go2tv.app/go2tv/v2/rtmp"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
@@ -154,6 +156,8 @@ type FyneScreen struct {
 	imageAutoSkipCancel      context.CancelFunc
 	rtmpMu                   sync.Mutex
 	resumeSession            resumePlaybackSession
+	Crash                    *crashlog.Session
+	PendingCrashPath         string
 }
 
 type debugWriter struct {
@@ -202,6 +206,42 @@ func (f *debugWriter) Write(b []byte) (int, error) {
 	f.ring.Value = string(b)
 	f.ring = f.ring.Next()
 	return len(b), nil
+}
+
+func newDebugWriter() *debugWriter {
+	return &debugWriter{ring: ring.New(1000)}
+}
+
+func hasDebugLogs(dw *debugWriter) bool {
+	if dw == nil || dw.ring == nil {
+		return false
+	}
+
+	var itemInRing bool
+	dw.ring.Do(func(p any) {
+		if p != nil {
+			itemInRing = true
+		}
+	})
+
+	return itemInRing
+}
+
+func writeDebugLogs(w io.Writer, dw *debugWriter) error {
+	if dw == nil || dw.ring == nil {
+		return nil
+	}
+
+	var writeErr error
+	dw.ring.Do(func(p any) {
+		if p == nil || writeErr != nil {
+			return
+		}
+
+		_, writeErr = io.WriteString(w, p.(string))
+	})
+
+	return writeErr
 }
 
 //go:embed translations
@@ -302,6 +342,14 @@ func Start(ctx context.Context, s *FyneScreen) {
 	// Start Chromecast discovery in background
 	go devices.StartChromecastDiscoveryLoop(ctx)
 
+	if app := fyne.CurrentApp(); app != nil {
+		app.Lifecycle().SetOnStopped(func() {
+			if s.Crash != nil {
+				_ = s.Crash.CloseClean()
+			}
+		})
+	}
+
 	go func() {
 		<-ctx.Done()
 		s.rtmpMu.Lock()
@@ -310,6 +358,9 @@ func Start(ctx context.Context, s *FyneScreen) {
 		}
 		s.rtmpMu.Unlock()
 		stopScreencastSession(s)
+		if s.Crash != nil {
+			_ = s.Crash.CloseClean()
+		}
 		os.Exit(0)
 	}()
 
@@ -323,6 +374,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 	})
 
 	go silentCheckVersion(s)
+	showPendingCrashPopup(s)
 
 	w.ShowAndRun()
 
@@ -690,7 +742,7 @@ func (p *FyneScreen) checkChromecastCompatibility() {
 }
 
 // NewFyneScreen creates and initializes a new FyneScreen instance with the provided version string.
-func NewFyneScreen(version string) *FyneScreen {
+func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 	go2tv := app.NewWithID("app.go2tv.go2tv")
 
 	// Hack. Ongoing discussion in https://github.com/fyne-io/fyne/issues/5333
@@ -717,9 +769,7 @@ func NewFyneScreen(version string) *FyneScreen {
 		currentDir = ""
 	}
 
-	dw := &debugWriter{
-		ring: ring.New(1000),
-	}
+	dw := newDebugWriter()
 
 	ffmpegPath := func() string {
 		if go2tv.Preferences().String("ffmpeg") != "" {
@@ -743,9 +793,19 @@ func NewFyneScreen(version string) *FyneScreen {
 		audioFormats:       []string{".mp3", ".flac", ".wav", ".m4a"},
 		version:            version,
 		Debug:              dw,
+		Crash:              crash,
+		PendingCrashPath:   crashPath(crash),
 		queueSelectedIndex: -1,
 		lastQueueTapIndex:  -1,
 	}
+}
+
+func crashPath(crash *crashlog.Session) string {
+	if crash == nil {
+		return ""
+	}
+
+	return crash.PreviousCrashPath()
 }
 
 func onDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
