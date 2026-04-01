@@ -504,51 +504,46 @@ func setPlayPauseView(s string, screen *FyneScreen) {
 		screen.cancelEnablePlay()
 	}
 
-	// Delay the update to avoid conflict with button tap animation.
-	// Fyne's button tap animation doesn't synchronize with Refresh() calls,
-	// causing visual artifacts. Delay by 300ms to let animation complete.
-	go func() {
-		fyne.Do(func() {
-			// Check if we are casting an image
-			isImage := false
-			screen.mu.RLock()
-			if strings.HasPrefix(screen.castingMediaType, "image/") {
-				isImage = true
-			}
-			screen.mu.RUnlock()
+	fyne.Do(func() {
+		// Check if we are casting an image
+		isImage := false
+		screen.mu.RLock()
+		if strings.HasPrefix(screen.castingMediaType, "image/") {
+			isImage = true
+		}
+		screen.mu.RUnlock()
 
-			if isImage {
-				screen.PlayPause.Disable()
-				screen.PlayPause.SetIcon(theme.FileImageIcon())
-				screen.PlayPause.SetText(lang.L("Image Casting") + "  ")
-			} else {
-				state := screen.getScreenState()
-				if state == "Playing" || state == "Paused" {
-					screen.PlayPause.Enable()
-					switch s {
-					case "Play":
-						screen.PlayPause.SetText(lang.L("Play") + "  ")
-						screen.PlayPause.SetIcon(theme.MediaPlayIcon())
-					case "Pause":
-						screen.PlayPause.SetText(lang.L("Pause") + "  ")
-						screen.PlayPause.SetIcon(theme.MediaPauseIcon())
-					}
-				} else {
-					// Stopped or initial state
-					screen.PlayPause.Enable()
-
-					if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked && screen.selectedDeviceType == devices.DeviceTypeChromecast {
-						screen.PlayPause.SetText(lang.L("Start RTMP Session") + "  ")
-					} else {
-						screen.PlayPause.SetText(lang.L("Cast") + "  ")
-					}
+		if isImage {
+			screen.PlayPause.Disable()
+			screen.PlayPause.SetIcon(theme.FileImageIcon())
+			screen.PlayPause.SetText(lang.L("Image Casting") + "  ")
+		} else {
+			state := screen.getScreenState()
+			if state == "Playing" || state == "Paused" {
+				screen.PlayPause.Enable()
+				switch s {
+				case "Play":
+					screen.PlayPause.SetText(lang.L("Play") + "  ")
 					screen.PlayPause.SetIcon(theme.MediaPlayIcon())
+				case "Pause":
+					screen.PlayPause.SetText(lang.L("Pause") + "  ")
+					screen.PlayPause.SetIcon(theme.MediaPauseIcon())
 				}
+			} else {
+				// Stopped or initial state
+				screen.PlayPause.Enable()
+
+				if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked && screen.selectedDeviceType == devices.DeviceTypeChromecast {
+					screen.PlayPause.SetText(lang.L("Start RTMP Session") + "  ")
+				} else {
+					screen.PlayPause.SetText(lang.L("Cast") + "  ")
+				}
+				screen.PlayPause.SetIcon(theme.MediaPlayIcon())
 			}
-			screen.PlayPause.Refresh()
-			screen.refreshTraversalControls()
-		})
-	}()
+		}
+		screen.PlayPause.Refresh()
+		screen.refreshTraversalControls()
+	})
 }
 
 func setMuteUnmuteView(s string, screen *FyneScreen) {

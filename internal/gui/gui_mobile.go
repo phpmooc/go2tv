@@ -185,37 +185,32 @@ func setPlayPauseView(s string, screen *FyneScreen) {
 		screen.cancelEnablePlay()
 	}
 
-	// Delay the update to avoid conflict with button tap animation.
-	// Fyne's button tap animation doesn't synchronize with Refresh() calls,
-	// causing visual artifacts. Delay by 300ms to let animation complete.
-	go func() {
-		fyne.Do(func() {
-			// Check if we are casting an image
-			isImage := false
-			screen.mu.RLock()
-			if strings.HasPrefix(screen.castingMediaType, "image/") {
-				isImage = true
-			}
-			screen.mu.RUnlock()
+	fyne.Do(func() {
+		// Check if we are casting an image
+		isImage := false
+		screen.mu.RLock()
+		if strings.HasPrefix(screen.castingMediaType, "image/") {
+			isImage = true
+		}
+		screen.mu.RUnlock()
 
-			if isImage {
-				screen.PlayPause.Disable()
-				screen.PlayPause.SetIcon(theme.FileImageIcon())
-				screen.PlayPause.SetText("Image Casting")
-			} else {
-				screen.PlayPause.Enable()
-				switch s {
-				case "Play":
-					screen.PlayPause.Text = lang.L("Play")
-					screen.PlayPause.Icon = theme.MediaPlayIcon()
-				case "Pause":
-					screen.PlayPause.Text = lang.L("Pause")
-					screen.PlayPause.Icon = theme.MediaPauseIcon()
-				}
+		if isImage {
+			screen.PlayPause.Disable()
+			screen.PlayPause.SetIcon(theme.FileImageIcon())
+			screen.PlayPause.SetText("Image Casting")
+		} else {
+			screen.PlayPause.Enable()
+			switch s {
+			case "Play":
+				screen.PlayPause.Text = lang.L("Play")
+				screen.PlayPause.Icon = theme.MediaPlayIcon()
+			case "Pause":
+				screen.PlayPause.Text = lang.L("Pause")
+				screen.PlayPause.Icon = theme.MediaPauseIcon()
 			}
-			screen.PlayPause.Refresh()
-		})
-	}()
+		}
+		screen.PlayPause.Refresh()
+	})
 }
 
 func setMuteUnmuteView(s string, screen *FyneScreen) {
