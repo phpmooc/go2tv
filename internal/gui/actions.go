@@ -97,6 +97,28 @@ func chromecastImageStatusReady(status *castprotocol.CastStatus) bool {
 	return status.PlayerState == "PLAYING" || status.PlayerState == "PAUSED"
 }
 
+func selectedChromecastControlClient(screen *FyneScreen) (*castprotocol.CastClient, func(), error) {
+	if screen.selectedDeviceType != devices.DeviceTypeChromecast || screen.selectedDevice.addr == "" {
+		return nil, nil, errors.New(lang.L("chromecast not connected"))
+	}
+
+	if client := screen.reusableChromecastClientForSelectedDevice(); client != nil {
+		return client, func() {}, nil
+	}
+
+	client, err := castprotocol.NewCastClient(screen.selectedDevice.addr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("chromecast init: %w", err)
+	}
+	client.LogOutput = screen.Debug
+
+	if err := client.Connect(); err != nil {
+		return nil, nil, fmt.Errorf("chromecast connect: %w", err)
+	}
+
+	return client, func() { _ = client.Close(false) }, nil
+}
+
 func muteAction(screen *FyneScreen) {
 	// Handle icon toggle (mute -> unmute)
 	if screen.MuteUnmute.Icon == theme.VolumeMuteIcon() {
@@ -104,14 +126,17 @@ func muteAction(screen *FyneScreen) {
 		return
 	}
 
-	// Handle Chromecast mute
+	// Handle Chromecast mute for selected device.
 	if screen.selectedDeviceType == devices.DeviceTypeChromecast {
 		go func() {
-			if screen.chromecastClient == nil || !screen.chromecastClient.IsConnected() {
+			client, cleanup, err := selectedChromecastControlClient(screen)
+			if err != nil {
 				check(screen, errors.New(lang.L("chromecast not connected")))
 				return
 			}
-			if err := screen.chromecastClient.SetMuted(true); err != nil {
+			defer cleanup()
+
+			if err := client.SetMuted(true); err != nil {
 				check(screen, errors.New(lang.L("could not send mute action")))
 				return
 			}
@@ -144,14 +169,17 @@ func muteAction(screen *FyneScreen) {
 }
 
 func unmuteAction(screen *FyneScreen) {
-	// Handle Chromecast unmute
+	// Handle Chromecast unmute for selected device.
 	if screen.selectedDeviceType == devices.DeviceTypeChromecast {
 		go func() {
-			if screen.chromecastClient == nil || !screen.chromecastClient.IsConnected() {
+			client, cleanup, err := selectedChromecastControlClient(screen)
+			if err != nil {
 				check(screen, errors.New(lang.L("chromecast not connected")))
 				return
 			}
-			if err := screen.chromecastClient.SetMuted(false); err != nil {
+			defer cleanup()
+
+			if err := client.SetMuted(false); err != nil {
 				check(screen, errors.New(lang.L("could not send mute action")))
 				return
 			}
@@ -504,10 +532,10 @@ func playAction(screen *FyneScreen) {
 		}
 	}
 
-	// Active Chromecast session: client connected and playing/paused
-	if screen.chromecastClient != nil && screen.chromecastClient.IsConnected() && isActivePlayback {
+	// Active Chromecast session: control the session owner, not a warm reusable client.
+	if client := screen.activeChromecastPlaybackClient(); client != nil && isActivePlayback {
 		if currentState == "Paused" {
-			if err := screen.chromecastClient.Play(); err != nil {
+			if err := client.Play(); err != nil {
 				check(screen, err)
 				return
 			}
@@ -516,7 +544,7 @@ func playAction(screen *FyneScreen) {
 			return
 		}
 		if currentState == "Playing" {
-			if err := screen.chromecastClient.Pause(); err != nil {
+			if err := client.Pause(); err != nil {
 				check(screen, err)
 				return
 			}
@@ -947,11 +975,11 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		return
 	}
 
-	// Handle pause/resume if already playing
-	if screen.chromecastClient != nil && screen.chromecastClient.IsConnected() {
+	// Handle pause/resume if already playing on the active Chromecast session.
+	if client := screen.activeChromecastPlaybackClient(); client != nil {
 		currentState := screen.getScreenState()
 		if currentState == "Paused" {
-			if err := screen.chromecastClient.Play(); err != nil {
+			if err := client.Play(); err != nil {
 				check(screen, err)
 				startAfreshPlayButton(screen)
 				return
@@ -962,7 +990,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			return
 		}
 		if screen.getScreenState() == "Playing" {
-			if err := screen.chromecastClient.Pause(); err != nil {
+			if err := client.Pause(); err != nil {
 				check(screen, err)
 				return
 			}
@@ -1015,9 +1043,15 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		}
 	}
 
-	// Reuse existing client if connected (for loop/autoplay), otherwise create new one
-	client := screen.chromecastClient
-	if client == nil || !client.IsConnected() {
+	// Reuse existing client only for the same selected Chromecast device.
+	client := screen.reusableChromecastClientForSelectedDevice()
+	if client == nil {
+		staleClient := screen.chromecastClient
+		if staleClient != nil && staleClient.IsConnected() && !chromecastClientOwnsDevice(staleClient, sessionDevice) {
+			screen.chromecastClient = nil
+			go staleClient.Close(false)
+		}
+
 		var err error
 		client, err = castprotocol.NewCastClient(sessionDevice.addr)
 		if err != nil {
@@ -1356,7 +1390,7 @@ func chromecastTranscodedSeek(screen *FyneScreen, seekPos int) {
 	actionID := screen.nextChromecastActionID()
 
 	// Capture client reference before async operation
-	client := screen.chromecastClient
+	client := screen.activeChromecastPlaybackClient()
 	if client == nil || !client.IsConnected() {
 		return
 	}
@@ -1370,7 +1404,11 @@ func chromecastTranscodedSeek(screen *FyneScreen, seekPos int) {
 		}
 		// Transcoded streams always output video/mp4
 		mediaType := "video/mp4"
-		whereToListen, err := utils.URLtoListenIPandPort(screen.selectedDevice.addr)
+		sessionDevice := screen.getActiveDevice()
+		if sessionDevice.addr == "" {
+			sessionDevice = screen.selectedDevice
+		}
+		whereToListen, err := utils.URLtoListenIPandPort(sessionDevice.addr)
 		if err != nil {
 			check(screen, err)
 			return
@@ -1735,9 +1773,9 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 		return
 	}
 
-	// For Chromecast: reuse existing connection for faster skip
-	if screen.selectedDeviceType == devices.DeviceTypeChromecast &&
-		screen.chromecastClient != nil && screen.chromecastClient.IsConnected() {
+	// For Chromecast: reuse existing connection for faster skip on the same device.
+	client := screen.reusableChromecastClientForSelectedDevice()
+	if screen.selectedDeviceType == devices.DeviceTypeChromecast && client != nil {
 		// Get media type
 		mediaType, err := utils.GetMimeDetailsFromPath(screen.mediafile)
 		if err != nil {
@@ -1864,7 +1902,6 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			screen.updateScreenState("Waiting")
 			serverStoppedCTX = normalizeChromecastWatcherContext(serverStoppedCTX)
 
-			client := screen.chromecastClient
 			if client == nil || !client.IsConnected() {
 				return
 			}
@@ -1955,6 +1992,7 @@ func previewmedia(screen *FyneScreen) {
 func stopAction(screen *FyneScreen) {
 	screen.persistDisplayedResumeProgress(true)
 	screen.clearResumeSession()
+	chromecastClient := screen.chromecastSessionClient()
 
 	screen.nextChromecastActionID()
 	screen.cancelImageAutoSkipTimer()
@@ -1966,9 +2004,8 @@ func stopAction(screen *FyneScreen) {
 	// Clear casting media type immediately
 	screen.SetMediaType("")
 
-	if screen.chromecastClient != nil && screen.chromecastClient.IsConnected() {
+	if chromecastClient != nil {
 		// Capture references before clearing
-		client := screen.chromecastClient
 		server := screen.httpserver
 
 		if screen.cancelServerStop != nil {
@@ -1993,8 +2030,8 @@ func stopAction(screen *FyneScreen) {
 
 		// Run blocking network operations in background
 		go func() {
-			_ = client.Stop()
-			client.Close(false)
+			_ = chromecastClient.Stop()
+			chromecastClient.Close(false)
 			if server != nil {
 				server.StopServer()
 			}
@@ -2050,15 +2087,17 @@ func getDevices(delay int) ([]devType, error) {
 
 func volumeAction(screen *FyneScreen, up bool) {
 	go func() {
-		// Handle Chromecast volume
+		// Handle Chromecast volume for selected device.
 		if screen.selectedDeviceType == devices.DeviceTypeChromecast {
-			if screen.chromecastClient == nil || !screen.chromecastClient.IsConnected() {
+			client, cleanup, err := selectedChromecastControlClient(screen)
+			if err != nil {
 				check(screen, errors.New(lang.L("chromecast not connected")))
 				return
 			}
+			defer cleanup()
 
 			// Get current volume from status
-			status, err := screen.chromecastClient.GetStatus()
+			status, err := client.GetStatus()
 			if err != nil {
 				check(screen, errors.New(lang.L("could not get the volume levels")))
 				return
@@ -2078,7 +2117,7 @@ func volumeAction(screen *FyneScreen, up bool) {
 				newVolume = 1
 			}
 
-			if err := screen.chromecastClient.SetVolume(newVolume); err != nil {
+			if err := client.SetVolume(newVolume); err != nil {
 				check(screen, errors.New(lang.L("could not send volume action")))
 			}
 			return

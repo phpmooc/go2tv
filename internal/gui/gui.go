@@ -6,6 +6,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -388,7 +389,7 @@ func (p *FyneScreen) Fini() {
 				return
 			}
 
-			if isChromecast && p.chromecastClient != nil && p.chromecastClient.IsConnected() {
+			if isChromecast && p.reusableChromecastClientForSelectedDevice() != nil {
 				go skipToMediaPathAction(p, nextMediaPath)
 				return
 			}
@@ -651,6 +652,67 @@ func normalizeChromecastWatcherContext(ctx context.Context) context.Context {
 	}
 
 	return context.Background()
+}
+
+func chromecastDeviceHost(device devType) string {
+	if device.deviceType != devices.DeviceTypeChromecast || device.addr == "" {
+		return ""
+	}
+
+	u, err := url.Parse(device.addr)
+	if err != nil {
+		return ""
+	}
+
+	return u.Hostname()
+}
+
+func chromecastClientOwnsDevice(client *castprotocol.CastClient, device devType) bool {
+	if client == nil {
+		return false
+	}
+
+	deviceHost := chromecastDeviceHost(device)
+	if deviceHost == "" {
+		return false
+	}
+
+	return strings.EqualFold(client.Host(), deviceHost)
+}
+
+func (p *FyneScreen) chromecastSessionClient() *castprotocol.CastClient {
+	client := p.chromecastClient
+	if client == nil || !client.IsConnected() {
+		return nil
+	}
+
+	if !chromecastClientOwnsDevice(client, p.getActiveDevice()) {
+		return nil
+	}
+
+	return client
+}
+
+func (p *FyneScreen) activeChromecastPlaybackClient() *castprotocol.CastClient {
+	switch p.getScreenState() {
+	case "Playing", "Paused":
+		return p.chromecastSessionClient()
+	default:
+		return nil
+	}
+}
+
+func (p *FyneScreen) reusableChromecastClientForSelectedDevice() *castprotocol.CastClient {
+	client := p.chromecastClient
+	if client == nil || !client.IsConnected() {
+		return nil
+	}
+
+	if !chromecastClientOwnsDevice(client, p.selectedDevice) {
+		return nil
+	}
+
+	return client
 }
 
 // checkChromecastCompatibility checks if loaded media needs transcoding for Chromecast.
