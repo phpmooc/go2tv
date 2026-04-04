@@ -3,9 +3,7 @@
 package gui
 
 import (
-	"container/ring"
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,6 +28,7 @@ import (
 type FyneScreen struct {
 	mu                   sync.RWMutex
 	Debug                *debugWriter
+	DiscoveryDebug       *debugWriter
 	Current              fyne.Window
 	tvdata               *soapcalls.TVPayload
 	chromecastClient     *castprotocol.CastClient
@@ -69,57 +68,11 @@ type FyneScreen struct {
 	PendingCrashPath     string
 }
 
-type debugWriter struct {
-	ring *ring.Ring
-}
-
 type devType struct {
 	name        string
 	addr        string
 	deviceType  string
 	isAudioOnly bool
-}
-
-func (f *debugWriter) Write(b []byte) (int, error) {
-	f.ring.Value = string(b)
-	f.ring = f.ring.Next()
-	return len(b), nil
-}
-
-func newDebugWriter() *debugWriter {
-	return &debugWriter{ring: ring.New(1000)}
-}
-
-func hasDebugLogs(dw *debugWriter) bool {
-	if dw == nil || dw.ring == nil {
-		return false
-	}
-
-	var itemInRing bool
-	dw.ring.Do(func(p any) {
-		if p != nil {
-			itemInRing = true
-		}
-	})
-
-	return itemInRing
-}
-
-func writeDebugLogs(w io.Writer, dw *debugWriter) error {
-	if dw == nil || dw.ring == nil {
-		return nil
-	}
-
-	var writeErr error
-	dw.ring.Do(func(p any) {
-		if p == nil || writeErr != nil {
-			return
-		}
-
-		_, writeErr = io.WriteString(w, p.(string))
-	})
-
-	return writeErr
 }
 
 // Start .
@@ -284,12 +237,14 @@ func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 	go2tv.Driver().SetDisableScreenBlanking(true)
 
 	w := go2tv.NewWindow("Go2TV")
-	dw := newDebugWriter()
-	devices.SetDiscoveryLogOutput(dw)
+	dw := newDebugWriter(runtimeDebugRingSize)
+	discoveryDebug := newDebugWriter(discoveryDebugRingSize)
+	devices.SetDiscoveryLogOutput(discoveryDebug)
 
 	return &FyneScreen{
 		Current:          w,
 		Debug:            dw,
+		DiscoveryDebug:   discoveryDebug,
 		mediaFormats:     []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
 		version:          version,
 		Crash:            crash,

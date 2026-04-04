@@ -3,11 +3,9 @@
 package gui
 
 import (
-	"container/ring"
 	"context"
 	"embed"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -48,6 +46,7 @@ type FyneScreen struct {
 	cancelEnablePlay         context.CancelFunc
 	PlayPause                *widget.Button
 	Debug                    *debugWriter
+	DiscoveryDebug           *debugWriter
 	VolumeUp                 *widget.Button
 	SkipPreviousButton       *widget.Button
 	SkipNextButton           *widget.Button
@@ -160,10 +159,6 @@ type FyneScreen struct {
 	PendingCrashPath         string
 }
 
-type debugWriter struct {
-	ring *ring.Ring
-}
-
 type droppedMediaMode uint8
 
 const (
@@ -200,48 +195,6 @@ func (s *FyneScreen) updateFFmpegDependentCheckTooltips() {
 	setToolTip(s.transcodeToolTipCheck, s.TranscodeCheckBox)
 	setToolTip(s.screencastToolTipCheck, s.ScreencastCheckBox)
 	setToolTip(s.rtmpServerToolTipCheck, s.rtmpServerCheck)
-}
-
-func (f *debugWriter) Write(b []byte) (int, error) {
-	f.ring.Value = string(b)
-	f.ring = f.ring.Next()
-	return len(b), nil
-}
-
-func newDebugWriter() *debugWriter {
-	return &debugWriter{ring: ring.New(1000)}
-}
-
-func hasDebugLogs(dw *debugWriter) bool {
-	if dw == nil || dw.ring == nil {
-		return false
-	}
-
-	var itemInRing bool
-	dw.ring.Do(func(p any) {
-		if p != nil {
-			itemInRing = true
-		}
-	})
-
-	return itemInRing
-}
-
-func writeDebugLogs(w io.Writer, dw *debugWriter) error {
-	if dw == nil || dw.ring == nil {
-		return nil
-	}
-
-	var writeErr error
-	dw.ring.Do(func(p any) {
-		if p == nil || writeErr != nil {
-			return
-		}
-
-		_, writeErr = io.WriteString(w, p.(string))
-	})
-
-	return writeErr
 }
 
 //go:embed translations
@@ -769,8 +722,9 @@ func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 		currentDir = ""
 	}
 
-	dw := newDebugWriter()
-	devices.SetDiscoveryLogOutput(dw)
+	dw := newDebugWriter(runtimeDebugRingSize)
+	discoveryDebug := newDebugWriter(discoveryDebugRingSize)
+	devices.SetDiscoveryLogOutput(discoveryDebug)
 
 	ffmpegPath := func() string {
 		if go2tv.Preferences().String("ffmpeg") != "" {
@@ -794,6 +748,7 @@ func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 		audioFormats:       []string{".mp3", ".flac", ".wav", ".m4a"},
 		version:            version,
 		Debug:              dw,
+		DiscoveryDebug:     discoveryDebug,
 		Crash:              crash,
 		PendingCrashPath:   crashPath(crash),
 		queueSelectedIndex: -1,

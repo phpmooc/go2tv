@@ -27,6 +27,11 @@ type Device struct {
 	IsAudioOnly bool
 }
 
+type deviceEntry struct {
+	name string
+	addr string
+}
+
 var (
 	ErrNoDeviceAvailable  = errors.New("loadSSDPservices: No available Media Renderers")
 	ErrDeviceNotAvailable = errors.New("devicePicker: Requested device not available")
@@ -36,6 +41,9 @@ var (
 var (
 	ssdpSearch              = ssdp.Search
 	loadDevicesFromLocation = soapcalls.LoadDevicesFromLocation
+	interfaceAddrs          = net.Interfaces
+	ifaceAddrLookup         = func(iface net.Interface) ([]net.Addr, error) { return iface.Addrs() }
+	listenUDP               = net.ListenUDP
 	discoveryLogOutput      io.Writer
 	discoveryLogMu          sync.Mutex
 )
@@ -70,12 +78,11 @@ func IsChromecastURL(deviceURL string) bool {
 // LoadSSDPservices returns a slice of DLNA devices that support
 // required playback services.
 func LoadSSDPservices(delay int) ([]Device, error) {
-	discoveryDebugf("LoadSSDPservices start delay=%d", delay)
-
 	// Collect unique locations (a single location may have multiple embedded devices).
 	// We intentionally do not filter by ST value here because some vendors reply with
 	// non-AVTransport ST values while still exposing AVTransport in LOCATION XML.
 	locations := make(map[string]struct{})
+	var loadErrors, filteredDevices, unnamedDevices int
 
 	port := 3339
 
@@ -109,48 +116,33 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 		discoveryDebugf("LoadSSDPservices search error: %v", err)
 		return nil, fmt.Errorf("LoadSSDPservices search error: %w", err)
 	}
-	discoveryDebugf("LoadSSDPservices ssdp_results=%d listen_addr=%q", len(list), addrString)
 
 	for _, srv := range list {
 		if srv.Location != "" {
-			discoveryDebugf("LoadSSDPservices ssdp_hit type=%q location=%q", srv.Type, srv.Location)
 			locations[srv.Location] = struct{}{}
 		}
 	}
 
-	// Extract all devices from each unique location
-	type deviceEntry struct {
-		name string
-		addr string
-	}
 	var allDevices []deviceEntry
 
 	for loc := range locations {
 		devices, err := loadDevicesFromLocation(context.Background(), loc)
 		if err != nil {
-			discoveryDebugf("LoadSSDPservices location=%q load error: %v", loc, err)
+			loadErrors++
 			continue
 		}
-		discoveryDebugf("LoadSSDPservices location=%q parsed_devices=%d", loc, len(devices))
 
 		for _, dev := range devices {
 			if !isDLNADeviceCastable(dev) {
-				discoveryDebugf(
-					"LoadSSDPservices filtered name=%q udn=%q avtransport=%t connection_manager=%t",
-					dev.FriendlyName,
-					dev.UDN,
-					dev.AvtransportControlURL != "",
-					dev.ConnectionManagerURL != "",
-				)
+				filteredDevices++
 				continue
 			}
 
 			name := dev.FriendlyName
 			if name == "" {
 				name = "Unknown Device"
-				discoveryDebugf("LoadSSDPservices empty friendly name location=%q", loc)
+				unnamedDevices++
 			}
-			discoveryDebugf("LoadSSDPservices accepted name=%q location=%q", name, loc)
 			allDevices = append(allDevices, deviceEntry{name: name, addr: loc})
 		}
 	}
@@ -179,7 +171,15 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	}
 
 	if len(deviceList) == 0 {
-		discoveryDebugf("LoadSSDPservices no devices after filtering")
+		discoveryDebugf(
+			"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d filtered=%d unnamed=%d returned=0",
+			addrString,
+			len(list),
+			len(locations),
+			loadErrors,
+			filteredDevices,
+			unnamedDevices,
+		)
 		return nil, ErrNoDeviceAvailable
 	}
 
@@ -192,19 +192,25 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 			Type: DeviceTypeDLNA,
 		})
 	}
-	discoveryDebugf("LoadSSDPservices returning_devices=%d", len(result))
+	discoveryDebugf(
+		"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d filtered=%d unnamed=%d returned=%d",
+		addrString,
+		len(list),
+		len(locations),
+		loadErrors,
+		filteredDevices,
+		unnamedDevices,
+		len(result),
+	)
 
 	return result, nil
 }
-
 func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 	if dev == nil {
 		return false
 	}
 
-	// AVTransport drives playback. ConnectionManager is required by Play1 path
-	// because we call GetProtocolInfo before SetAVTransportURI.
-	return dev.AvtransportControlURL != "" && dev.ConnectionManagerURL != ""
+	return dev.AvtransportControlURL != ""
 }
 
 // LoadAllDevices returns a combined slice of DLNA and Chromecast devices.
@@ -212,12 +218,12 @@ func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 // immediately without waiting for both to complete. This ensures delays in
 // one protocol don't block the other.
 func LoadAllDevices(delay int) ([]Device, error) {
-	discoveryDebugf("LoadAllDevices start delay=%d", delay)
-
 	type deviceResult struct {
 		devices []Device
 		err     error
 	}
+
+	var dlnaResult, ccResult deviceResult
 
 	dlnaChan := make(chan deviceResult, 1)
 	ccChan := make(chan deviceResult, 1)
@@ -242,39 +248,66 @@ func LoadAllDevices(delay int) ([]Device, error) {
 	for resultsReceived < 2 {
 		select {
 		case result := <-dlnaChan:
-			discoveryDebugf("LoadAllDevices dlna_result devices=%d err=%v", len(result.devices), result.err)
+			dlnaResult = result
 			if result.err == nil {
 				combined = append(combined, result.devices...)
 			}
 			resultsReceived++
 
 		case result := <-ccChan:
-			discoveryDebugf("LoadAllDevices chromecast_result devices=%d", len(result.devices))
+			ccResult = result
 			if result.devices != nil {
 				combined = append(combined, result.devices...)
 			}
 			resultsReceived++
 
 		case <-timeout:
-			discoveryDebugf("LoadAllDevices timeout combined=%d results_received=%d", len(combined), resultsReceived)
 			// Return partial results if timeout occurs
 			if len(combined) > 0 {
 				sortDevices(combined)
-				discoveryDebugf("LoadAllDevices returning partial devices=%d", len(combined))
+				discoveryDebugf(
+					"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%t chromecast=%d combined=%d",
+					delay,
+					resultsReceived,
+					len(dlnaResult.devices),
+					dlnaResult.err != nil,
+					len(ccResult.devices),
+					len(combined),
+				)
 				return combined, nil
 			}
-			discoveryDebugf("LoadAllDevices no devices before timeout")
+			discoveryDebugf(
+				"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%t chromecast=%d combined=0",
+				delay,
+				resultsReceived,
+				len(dlnaResult.devices),
+				dlnaResult.err != nil,
+				len(ccResult.devices),
+			)
 			return nil, ErrNoDeviceAvailable
 		}
 	}
 
 	if len(combined) > 0 {
 		sortDevices(combined)
-		discoveryDebugf("LoadAllDevices returning_devices=%d", len(combined))
+		discoveryDebugf(
+			"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%t chromecast=%d combined=%d",
+			delay,
+			len(dlnaResult.devices),
+			dlnaResult.err != nil,
+			len(ccResult.devices),
+			len(combined),
+		)
 		return combined, nil
 	}
 
-	discoveryDebugf("LoadAllDevices no devices returned")
+	discoveryDebugf(
+		"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%t chromecast=%d combined=0",
+		delay,
+		len(dlnaResult.devices),
+		dlnaResult.err != nil,
+		len(ccResult.devices),
+	)
 	return nil, ErrNoDeviceAvailable
 }
 
@@ -305,15 +338,18 @@ func DevicePicker(devices []Device, n int) (string, error) {
 }
 
 func checkInterfacesForPort(port int) error {
-	interfaces, err := net.Interfaces()
+	interfaces, err := interfaceAddrs()
 	if err != nil {
 		return err
 	}
 
+	var lastErr error
+
 	for _, iface := range interfaces {
-		addrs, err := iface.Addrs()
+		addrs, err := ifaceAddrLookup(iface)
 		if err != nil {
-			return err
+			lastErr = err
+			continue
 		}
 
 		for _, addr := range addrs {
@@ -328,15 +364,20 @@ func checkInterfacesForPort(port int) error {
 				IP:   ip,
 			}
 
-			udpConn, err := net.ListenUDP("udp4", &udpAddr)
+			udpConn, err := listenUDP("udp4", &udpAddr)
 			if err != nil {
-				return err
+				lastErr = err
+				continue
 			}
 
 			udpConn.Close()
 			return nil
 
 		}
+	}
+
+	if lastErr != nil {
+		return lastErr
 	}
 
 	return nil

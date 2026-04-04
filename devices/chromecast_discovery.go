@@ -71,11 +71,21 @@ func upsertChromecastFromMDNSEntry(entry *mdns.ServiceEntry) {
 	}
 
 	ccMu.Lock()
+	prev, existed := chromeCastDevices[address]
 	chromeCastDevices[address] = castDevice{
 		Name:        friendlyName,
 		IsAudioOnly: isAudioOnly,
 	}
 	ccMu.Unlock()
+
+	if !existed {
+		discoveryDebugf("Chromecast discovery added name=%q addr=%q audio_only=%t", friendlyName, address, isAudioOnly)
+		return
+	}
+
+	if prev.Name != friendlyName || prev.IsAudioOnly != isAudioOnly {
+		discoveryDebugf("Chromecast discovery updated name=%q addr=%q audio_only=%t", friendlyName, address, isAudioOnly)
+	}
 }
 
 func warmupChromecastCache(timeout time.Duration) {
@@ -117,6 +127,11 @@ func warmupChromecastCache(timeout time.Duration) {
 
 	close(entriesCh)
 	<-doneCh
+
+	ccMu.Lock()
+	deviceCount := len(chromeCastDevices)
+	ccMu.Unlock()
+	discoveryDebugf("Chromecast warmup interfaces=%d timeout=%s devices=%d", len(interfaces), timeout, deviceCount)
 }
 
 func currentChromecastPollInterval() time.Duration {
@@ -209,6 +224,7 @@ func discoverChromecastDevices(ctx context.Context) {
 			cancel, err := startPollingWorker(ctx, &pollIface)
 			if err == nil {
 				pollWorkers[iface.Index] = worker{cancel: cancel}
+				discoveryDebugf("Chromecast discovery interface added name=%q index=%d", iface.Name, iface.Index)
 			}
 		}
 
@@ -217,6 +233,7 @@ func discoverChromecastDevices(ctx context.Context) {
 				continue
 			}
 			if _, ok := active[idx]; !ok {
+				discoveryDebugf("Chromecast discovery interface removed index=%d", idx)
 				w.cancel()
 				delete(pollWorkers, idx)
 			}
@@ -229,8 +246,10 @@ func discoverChromecastDevices(ctx context.Context) {
 			cancel, err := startPollingWorker(ctx, nil)
 			if err == nil {
 				pollWorkers[-1] = worker{cancel: cancel}
+				discoveryDebugf("Chromecast discovery fallback worker enabled")
 			}
 		} else if w, ok := pollWorkers[-1]; ok {
+			discoveryDebugf("Chromecast discovery fallback worker disabled")
 			w.cancel()
 			delete(pollWorkers, -1)
 		}
@@ -316,6 +335,7 @@ func healthCheckChromecastDevices(ctx context.Context) {
 			ccMu.Lock()
 			for address := range chromeCastDevices {
 				if !HostPortIsAlive(address) {
+					discoveryDebugf("Chromecast discovery removed addr=%q", address)
 					delete(chromeCastDevices, address)
 				}
 			}

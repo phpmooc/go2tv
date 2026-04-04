@@ -19,11 +19,13 @@ func TestWriteDiagnosticsIncludesCrashAndDebugLogs(t *testing.T) {
 
 	s := &FyneScreen{
 		version:          "test",
-		Debug:            newDebugWriter(),
+		Debug:            newDebugWriter(runtimeDebugRingSize),
+		DiscoveryDebug:   newDebugWriter(discoveryDebugRingSize),
 		PendingCrashPath: crashPath,
 	}
 	_, _ = s.Debug.Write([]byte("line one\n"))
 	_, _ = s.Debug.Write([]byte("line two\n"))
+	_, _ = s.DiscoveryDebug.Write([]byte("discovery one\n"))
 
 	var buf bytes.Buffer
 	if err := writeDiagnostics(&buf, s); err != nil {
@@ -31,7 +33,7 @@ func TestWriteDiagnosticsIncludesCrashAndDebugLogs(t *testing.T) {
 	}
 
 	out := buf.String()
-	for _, want := range []string{"Go2TV Diagnostics", "=== Crash Report ===", "panic: boom", "=== Debug Log Ring ===", "line one", "line two"} {
+	for _, want := range []string{"Go2TV Diagnostics", "=== Crash Report ===", "panic: boom", "=== Runtime Log Ring ===", "line one", "line two", "=== Discovery Log Ring ===", "discovery one"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in diagnostics:\n%s", want, out)
 		}

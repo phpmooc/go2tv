@@ -19,7 +19,7 @@ func diagnosticsAvailable(s *FyneScreen) bool {
 		return false
 	}
 
-	return hasDebugLogs(s.Debug) || latestCrashPath(s) != ""
+	return hasDebugLogs(s.Debug) || hasDebugLogs(s.DiscoveryDebug) || latestCrashPath(s) != ""
 }
 
 func latestCrashPath(s *FyneScreen) string {
@@ -95,13 +95,26 @@ func writeDiagnostics(w io.Writer, s *FyneScreen) error {
 		}
 	}
 
-	if _, err := io.WriteString(w, "=== Debug Log Ring ===\n"); err != nil {
+	if _, err := io.WriteString(w, "=== Runtime Log Ring ===\n"); err != nil {
 		return err
 	}
 	if !hasDebugLogs(s.Debug) {
-		_, err := io.WriteString(w, "Debug logs are empty.\n")
+		if _, err := io.WriteString(w, "Runtime logs are empty.\n\n"); err != nil {
+			return err
+		}
+	} else {
+		if err := writeDebugLogs(w, s.Debug); err != nil {
+			return err
+		}
+	}
+
+	if _, err := io.WriteString(w, "\n=== Discovery Log Ring ===\n"); err != nil {
+		return err
+	}
+	if !hasDebugLogs(s.DiscoveryDebug) {
+		_, err := io.WriteString(w, "Discovery logs are empty.\n")
 		return err
 	}
 
-	return writeDebugLogs(w, s.Debug)
+	return writeDebugLogs(w, s.DiscoveryDebug)
 }

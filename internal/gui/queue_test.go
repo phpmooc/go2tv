@@ -3,7 +3,6 @@
 package gui
 
 import (
-	"container/ring"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -523,7 +522,7 @@ func TestQueueRowDedupesThumbnailRequests(t *testing.T) {
 	secondPath := filepath.Join(dir, "second.mp4")
 
 	row := newQueueRow(&FyneScreen{
-		Debug: &debugWriter{ring: ring.New(8)},
+		Debug: newDebugWriter(8),
 	})
 
 	first := QueueItem{
