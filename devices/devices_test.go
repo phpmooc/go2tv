@@ -3,6 +3,7 @@ package devices
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 
 	"github.com/alexballas/go-ssdp"
@@ -58,7 +59,7 @@ func TestLoadSSDPServicesDetectsNonAVTransportST(t *testing.T) {
 	}
 }
 
-func TestLoadSSDPServicesFiltersMissingConnectionManager(t *testing.T) {
+func TestLoadSSDPServicesAllowsMissingConnectionManager(t *testing.T) {
 	origSearch := ssdpSearch
 	origLoad := loadDevicesFromLocation
 	t.Cleanup(func() {
@@ -78,14 +79,81 @@ func TestLoadSSDPServicesFiltersMissingConnectionManager(t *testing.T) {
 	loadDevicesFromLocation = func(ctx context.Context, dmrurl string) ([]*soapcalls.DMRextracted, error) {
 		return []*soapcalls.DMRextracted{
 			{
-				FriendlyName:          "Broken Renderer",
+				FriendlyName:          "Legacy Renderer",
 				AvtransportControlURL: "http://speaker.local:1400/MediaRenderer/AVTransport/Control",
 			},
 		}, nil
 	}
 
-	_, err := LoadSSDPservices(1)
-	if !errors.Is(err, ErrNoDeviceAvailable) {
-		t.Fatalf("LoadSSDPservices() err = %v, want %v", err, ErrNoDeviceAvailable)
+	devs, err := LoadSSDPservices(1)
+	if err != nil {
+		t.Fatalf("LoadSSDPservices() err = %v, want nil", err)
 	}
+
+	if len(devs) != 1 {
+		t.Fatalf("LoadSSDPservices() len = %d, want 1", len(devs))
+	}
+
+	if devs[0].Name != "Legacy Renderer" {
+		t.Fatalf("LoadSSDPservices() name = %q, want %q", devs[0].Name, "Legacy Renderer")
+	}
+}
+func TestCheckInterfacesForPortSkipsBadInterfaceAddresses(t *testing.T) {
+	origInterfaceAddrs := interfaceAddrs
+	origIfaceAddrLookup := ifaceAddrLookup
+	origListenUDP := listenUDP
+	t.Cleanup(func() {
+		interfaceAddrs = origInterfaceAddrs
+		ifaceAddrLookup = origIfaceAddrLookup
+		listenUDP = origListenUDP
+	})
+
+	ifaces := []net.Interface{{Index: 1, Name: "bad0"}, {Index: 2, Name: "good0"}}
+	interfaceAddrs = func() ([]net.Interface, error) {
+		return ifaces, nil
+	}
+
+	listenAttempts := 0
+	listenUDP = func(network string, laddr *net.UDPAddr) (*net.UDPConn, error) {
+		listenAttempts++
+		switch laddr.IP.String() {
+		case "192.168.1.10":
+			return nil, errors.New("bind failed")
+		case "192.168.1.11":
+			conn, err := net.ListenUDP(network, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+			if err != nil {
+				t.Fatalf("ListenUDP fallback setup failed: %v", err)
+			}
+			return conn, nil
+		default:
+			t.Fatalf("unexpected listen address: %v", laddr)
+			return nil, nil
+		}
+	}
+
+	addrMap := map[string][]net.Addr{
+		"bad0":  {mustCIDRAddr(t, "192.168.1.10/24")},
+		"good0": {mustCIDRAddr(t, "192.168.1.11/24")},
+	}
+	ifaceAddrLookup = func(iface net.Interface) ([]net.Addr, error) {
+		return addrMap[iface.Name], nil
+	}
+
+	if err := checkInterfacesForPort(3339); err != nil {
+		t.Fatalf("checkInterfacesForPort() err = %v, want nil", err)
+	}
+
+	if listenAttempts != 2 {
+		t.Fatalf("listen attempts = %d, want 2", listenAttempts)
+	}
+}
+
+func mustCIDRAddr(t *testing.T, raw string) net.Addr {
+	t.Helper()
+	ip, ipNet, err := net.ParseCIDR(raw)
+	if err != nil {
+		t.Fatalf("ParseCIDR(%q): %v", raw, err)
+	}
+	ipNet.IP = ip
+	return ipNet
 }

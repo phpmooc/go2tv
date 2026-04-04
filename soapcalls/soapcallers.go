@@ -1192,6 +1192,11 @@ func (p *TVPayload) GetProtocolInfo() error {
 		p.ctx = context.Background()
 	}
 
+	if p.ConnectionManagerURL == "" {
+		p.Log().Debug().Str("Method", "GetProtocolInfo").Msg("Skipping GetProtocolInfo; no ConnectionManager URL")
+		return nil
+	}
+
 	xmlbuilder, err := getProtocolInfoSoapBuild()
 	if err != nil {
 		p.Log().Error().Str("Method", "GetProtocolInfo").Str("Action", "Build").Err(err).Msg("")

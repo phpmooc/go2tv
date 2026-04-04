@@ -301,6 +301,14 @@ func TestSeekSoapCallReturnsErrorOnFaultStatus(t *testing.T) {
 	}
 }
 
+func TestGetProtocolInfoSkipsWhenConnectionManagerMissing(t *testing.T) {
+	p := &TVPayload{}
+
+	if err := p.GetProtocolInfo(); err != nil {
+		t.Fatalf("GetProtocolInfo() err = %v, want nil", err)
+	}
+}
+
 func TestUpdateMRstate(t *testing.T) {
 	p := &TVPayload{
 		MediaRenderersStates:        make(map[string]*States),
