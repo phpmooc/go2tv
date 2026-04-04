@@ -1553,6 +1553,9 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 }
 
 func startAfreshPlayButton(screen *FyneScreen) {
+	// Prevent late Chromecast goroutines from restoring playback UI after reset.
+	screen.nextChromecastActionID()
+
 	if screen.cancelEnablePlay != nil {
 		screen.cancelEnablePlay()
 	}

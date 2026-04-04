@@ -608,6 +608,8 @@ func volumeAction(screen *FyneScreen, up bool) {
 }
 
 func startAfreshPlayButton(screen *FyneScreen) {
+	screen.nextChromecastActionID()
+
 	if screen.cancelEnablePlay != nil {
 		screen.cancelEnablePlay()
 	}
