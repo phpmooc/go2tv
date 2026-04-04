@@ -770,6 +770,7 @@ func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 	}
 
 	dw := newDebugWriter()
+	devices.SetDiscoveryLogOutput(dw)
 
 	ffmpegPath := func() string {
 		if go2tv.Preferences().String("ffmpeg") != "" {

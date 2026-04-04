@@ -285,6 +285,7 @@ func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 
 	w := go2tv.NewWindow("Go2TV")
 	dw := newDebugWriter()
+	devices.SetDiscoveryLogOutput(dw)
 
 	return &FyneScreen{
 		Current:          w,

@@ -50,10 +50,17 @@ MIT
 	checkversion := widget.NewButton(lang.L("Check version"), func() {
 		go checkVersion(s)
 	})
+	copyDiagnostics := widget.NewButton(lang.L("Copy Diagnostics"), func() {
+		copyDiagnosticsToClipboard(s)
+	})
 
 	s.CheckVersion = checkversion
 
-	return container.NewVBox(richhead, container.NewCenter(container.NewHBox(githubbutton, checkversion)))
+	return container.NewVBox(
+		richhead,
+		container.NewCenter(container.NewHBox(githubbutton, checkversion)),
+		container.NewCenter(copyDiagnostics),
+	)
 }
 
 func checkVersion(s *FyneScreen) {

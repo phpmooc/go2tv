@@ -3,9 +3,11 @@ package devices
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/alexballas/go-ssdp"
@@ -34,7 +36,27 @@ var (
 var (
 	ssdpSearch              = ssdp.Search
 	loadDevicesFromLocation = soapcalls.LoadDevicesFromLocation
+	discoveryLogOutput      io.Writer
+	discoveryLogMu          sync.Mutex
 )
+
+// SetDiscoveryLogOutput enables lightweight discovery debug logs.
+func SetDiscoveryLogOutput(w io.Writer) {
+	discoveryLogMu.Lock()
+	discoveryLogOutput = w
+	discoveryLogMu.Unlock()
+}
+
+func discoveryDebugf(format string, args ...any) {
+	discoveryLogMu.Lock()
+	defer discoveryLogMu.Unlock()
+
+	if discoveryLogOutput == nil {
+		return
+	}
+
+	_, _ = fmt.Fprintf(discoveryLogOutput, "discovery: "+format+"\n", args...)
+}
 
 // IsChromecastURL returns true if the URL points to a Chromecast device (port 8009).
 func IsChromecastURL(deviceURL string) bool {
@@ -48,6 +70,8 @@ func IsChromecastURL(deviceURL string) bool {
 // LoadSSDPservices returns a slice of DLNA devices that support
 // required playback services.
 func LoadSSDPservices(delay int) ([]Device, error) {
+	discoveryDebugf("LoadSSDPservices start delay=%d", delay)
+
 	// Collect unique locations (a single location may have multiple embedded devices).
 	// We intentionally do not filter by ST value here because some vendors reply with
 	// non-AVTransport ST values while still exposing AVTransport in LOCATION XML.
@@ -82,11 +106,14 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 
 	list, err := ssdpSearch(ssdp.All, delay, addrString)
 	if err != nil {
+		discoveryDebugf("LoadSSDPservices search error: %v", err)
 		return nil, fmt.Errorf("LoadSSDPservices search error: %w", err)
 	}
+	discoveryDebugf("LoadSSDPservices ssdp_results=%d listen_addr=%q", len(list), addrString)
 
 	for _, srv := range list {
 		if srv.Location != "" {
+			discoveryDebugf("LoadSSDPservices ssdp_hit type=%q location=%q", srv.Type, srv.Location)
 			locations[srv.Location] = struct{}{}
 		}
 	}
@@ -101,18 +128,29 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	for loc := range locations {
 		devices, err := loadDevicesFromLocation(context.Background(), loc)
 		if err != nil {
+			discoveryDebugf("LoadSSDPservices location=%q load error: %v", loc, err)
 			continue
 		}
+		discoveryDebugf("LoadSSDPservices location=%q parsed_devices=%d", loc, len(devices))
 
 		for _, dev := range devices {
 			if !isDLNADeviceCastable(dev) {
+				discoveryDebugf(
+					"LoadSSDPservices filtered name=%q udn=%q avtransport=%t connection_manager=%t",
+					dev.FriendlyName,
+					dev.UDN,
+					dev.AvtransportControlURL != "",
+					dev.ConnectionManagerURL != "",
+				)
 				continue
 			}
 
 			name := dev.FriendlyName
 			if name == "" {
 				name = "Unknown Device"
+				discoveryDebugf("LoadSSDPservices empty friendly name location=%q", loc)
 			}
+			discoveryDebugf("LoadSSDPservices accepted name=%q location=%q", name, loc)
 			allDevices = append(allDevices, deviceEntry{name: name, addr: loc})
 		}
 	}
@@ -141,6 +179,7 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	}
 
 	if len(deviceList) == 0 {
+		discoveryDebugf("LoadSSDPservices no devices after filtering")
 		return nil, ErrNoDeviceAvailable
 	}
 
@@ -153,6 +192,7 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 			Type: DeviceTypeDLNA,
 		})
 	}
+	discoveryDebugf("LoadSSDPservices returning_devices=%d", len(result))
 
 	return result, nil
 }
@@ -172,6 +212,8 @@ func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 // immediately without waiting for both to complete. This ensures delays in
 // one protocol don't block the other.
 func LoadAllDevices(delay int) ([]Device, error) {
+	discoveryDebugf("LoadAllDevices start delay=%d", delay)
+
 	type deviceResult struct {
 		devices []Device
 		err     error
@@ -200,32 +242,39 @@ func LoadAllDevices(delay int) ([]Device, error) {
 	for resultsReceived < 2 {
 		select {
 		case result := <-dlnaChan:
+			discoveryDebugf("LoadAllDevices dlna_result devices=%d err=%v", len(result.devices), result.err)
 			if result.err == nil {
 				combined = append(combined, result.devices...)
 			}
 			resultsReceived++
 
 		case result := <-ccChan:
+			discoveryDebugf("LoadAllDevices chromecast_result devices=%d", len(result.devices))
 			if result.devices != nil {
 				combined = append(combined, result.devices...)
 			}
 			resultsReceived++
 
 		case <-timeout:
+			discoveryDebugf("LoadAllDevices timeout combined=%d results_received=%d", len(combined), resultsReceived)
 			// Return partial results if timeout occurs
 			if len(combined) > 0 {
 				sortDevices(combined)
+				discoveryDebugf("LoadAllDevices returning partial devices=%d", len(combined))
 				return combined, nil
 			}
+			discoveryDebugf("LoadAllDevices no devices before timeout")
 			return nil, ErrNoDeviceAvailable
 		}
 	}
 
 	if len(combined) > 0 {
 		sortDevices(combined)
+		discoveryDebugf("LoadAllDevices returning_devices=%d", len(combined))
 		return combined, nil
 	}
 
+	discoveryDebugf("LoadAllDevices no devices returned")
 	return nil, ErrNoDeviceAvailable
 }
 
