@@ -670,6 +670,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			startAfreshPlayButton(screen)
 			return
 		}
+		client.SetStartupBarWorkaroundEnabled(chromecastStartupBarWorkaroundEnabled())
 
 		// Note: Debug logging disabled on mobile - zerolog crashes on Android
 		// client.LogOutput = screen.Debug

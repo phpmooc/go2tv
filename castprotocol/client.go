@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,15 +18,16 @@ import (
 
 // CastClient wraps go-chromecast Application for simplified API
 type CastClient struct {
-	app         *application.Application
-	conn        cast.Conn // keep reference to connection for custom commands
-	mu          sync.RWMutex
-	host        string
-	port        int
-	connected   bool
-	Logger      zerolog.Logger
-	LogOutput   io.Writer
-	initLogOnce sync.Once
+	app                         *application.Application
+	conn                        cast.Conn // keep reference to connection for custom commands
+	mu                          sync.RWMutex
+	host                        string
+	port                        int
+	connected                   bool
+	disableStartupBarWorkaround bool
+	Logger                      zerolog.Logger
+	LogOutput                   io.Writer
+	initLogOnce                 sync.Once
 }
 
 // Log returns the zerolog logger, initializing it lazily if LogOutput is set.
@@ -109,6 +111,182 @@ func isTimeoutError(err error) bool {
 	return false
 }
 
+func (c *CastClient) defaultReceiverReady() bool {
+	app := c.app.App()
+	return app != nil && app.AppId == cast.DefaultMediaReceiverAppID && app.TransportId != ""
+}
+
+func (c *CastClient) defaultReceiverTransportID() string {
+	app := c.app.App()
+	if app == nil {
+		return ""
+	}
+
+	return app.TransportId
+}
+
+// SetStartupBarWorkaroundEnabled controls the first-play Default Media Receiver workaround.
+// Enabled by default.
+func (c *CastClient) SetStartupBarWorkaroundEnabled(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.disableStartupBarWorkaround = !enabled
+}
+
+func (c *CastClient) startupBarWorkaroundEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return !c.disableStartupBarWorkaround
+}
+
+// Warm the default receiver before the first real LOAD.
+// Fresh LAUNCH+LOAD can leave the Chromecast transport overlay stuck open.
+func (c *CastClient) warmDefaultReceiver() error {
+	if c.defaultReceiverReady() {
+		return nil
+	}
+
+	if err := c.app.Update(); err == nil && c.defaultReceiverReady() {
+		return nil
+	}
+
+	var lastErr error
+	for attempt := range 5 {
+		if !c.IsConnected() {
+			c.Log().Debug().Str("Method", "warmDefaultReceiver").Msg("connection closed during warm-up, aborting silently")
+			return nil
+		}
+
+		c.Log().Debug().Str("Method", "warmDefaultReceiver").Int("Attempt", attempt+1).Msg("launching default receiver")
+		if err := LaunchDefaultReceiver(c.conn); err != nil {
+			lastErr = err
+			if isTimeoutError(err) && attempt < 4 {
+				c.Log().Debug().Str("Method", "warmDefaultReceiver").Int("Attempt", attempt+1).Err(err).Msg("timeout, TV may be waking up, retrying...")
+				if !c.IsConnected() {
+					c.Log().Debug().Str("Method", "warmDefaultReceiver").Msg("connection closed during retry wait, aborting silently")
+					return nil
+				}
+				time.Sleep(4 * time.Second)
+				continue
+			}
+			c.Log().Error().Str("Method", "warmDefaultReceiver").Err(err).Msg("launch receiver failed")
+			return fmt.Errorf("launch receiver: %w", err)
+		}
+
+		for i := range 8 {
+			if !c.IsConnected() {
+				c.Log().Debug().Str("Method", "warmDefaultReceiver").Msg("connection closed during app update, aborting silently")
+				return nil
+			}
+
+			if err := c.app.Update(); err != nil {
+				lastErr = err
+				c.Log().Debug().Str("Method", "warmDefaultReceiver").Int("Attempt", i+1).Err(err).Msg("app.Update retry")
+				time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+				continue
+			}
+
+			if c.defaultReceiverReady() {
+				c.Log().Debug().Str("Method", "warmDefaultReceiver").Str("TransportId", c.app.App().TransportId).Msg("default receiver ready")
+				return nil
+			}
+
+			lastErr = fmt.Errorf("failed to get default receiver transport ID after retries")
+			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+		}
+
+		if attempt < 4 {
+			c.Log().Debug().Str("Method", "warmDefaultReceiver").Int("Attempt", attempt+1).Msg("receiver not ready, retrying...")
+			if !c.IsConnected() {
+				c.Log().Debug().Str("Method", "warmDefaultReceiver").Msg("connection closed during retry wait, aborting silently")
+				return nil
+			}
+			time.Sleep(4 * time.Second)
+			continue
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("failed to get default receiver transport ID after retries")
+	}
+
+	c.Log().Error().Str("Method", "warmDefaultReceiver").Err(lastErr).Msg("failed to warm default receiver")
+	return lastErr
+}
+
+func shouldPrimeInitialBufferedSession(contentType string, live bool) bool {
+	return !live && strings.HasPrefix(contentType, "video/")
+}
+
+func (c *CastClient) waitForMediaSessionReady() error {
+	var lastErr error
+	for i := range 5 {
+		if !c.IsConnected() {
+			c.Log().Debug().Str("Method", "waitForMediaSessionReady").Msg("connection closed while waiting for media session, aborting silently")
+			return nil
+		}
+
+		if err := c.app.Update(); err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
+			continue
+		}
+
+		if c.app.Media() != nil {
+			return nil
+		}
+
+		lastErr = fmt.Errorf("media session not ready yet")
+		time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("media session not ready yet")
+	}
+
+	return lastErr
+}
+
+// Prime first buffered video load so the real cast starts on a post-session receiver.
+// This mimics the state that already works after one item has ended.
+func (c *CastClient) primeInitialBufferedSession(mediaURL string, contentType string) error {
+	transportId := c.defaultReceiverTransportID()
+	if transportId == "" {
+		return fmt.Errorf("failed to get transport ID after warm-up")
+	}
+
+	c.Log().Debug().Str("Method", "primeInitialBufferedSession").Str("URL", mediaURL).Str("ContentType", contentType).Msg("priming first buffered video session")
+
+	if err := LoadWithSubtitles(c.conn, transportId, mediaURL, contentType, 0, 0, "", false, false); err != nil {
+		return fmt.Errorf("prime load: %w", err)
+	}
+
+	if err := c.waitForMediaSessionReady(); err != nil {
+		return fmt.Errorf("prime wait media session: %w", err)
+	}
+
+	if err := c.app.StopMedia(); err != nil {
+		return fmt.Errorf("prime stop media: %w", err)
+	}
+
+	// Give the receiver a brief moment to settle into the same post-media state
+	// we observe after a natural finish.
+	for i := range 3 {
+		if !c.IsConnected() {
+			return nil
+		}
+
+		if err := c.app.Update(); err == nil {
+			break
+		}
+
+		time.Sleep(time.Duration(i+1) * 150 * time.Millisecond)
+	}
+
+	time.Sleep(250 * time.Millisecond)
+	return nil
+}
+
 // Load loads media from URL onto the Chromecast.
 // startTime is the position in seconds to start playback from.
 // duration is the total media duration in seconds (0 to let Chromecast detect).
@@ -130,6 +308,16 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 	// For live streams, we MUST use custom LoadWithSubtitles to set StreamType "LIVE"
 	// (go-chromecast library hardcodes StreamType "BUFFERED" so we need custom path for LIVE)
 	if subtitleURL == "" && duration == 0 && !live {
+		if err := c.warmDefaultReceiver(); err != nil {
+			return err
+		}
+
+		if c.app.Media() == nil && c.startupBarWorkaroundEnabled() && shouldPrimeInitialBufferedSession(contentType, live) {
+			if err := c.primeInitialBufferedSession(mediaURL, contentType); err != nil {
+				c.Log().Warn().Str("Method", "Load").Err(err).Msg("initial session prime failed, falling back to direct load")
+			}
+		}
+
 		// Retry loop for TV wake-up scenarios (timeout errors)
 		var lastErr error
 		for attempt := range 5 {
@@ -160,6 +348,16 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 	// With subtitles or custom duration: launch the app first WITHOUT loading media, then send custom load
 	// This prevents double playback (first without subs, then with subs queued)
 	// Retry loop for TV wake-up scenarios
+	if err := c.warmDefaultReceiver(); err != nil {
+		return err
+	}
+
+	if c.app.Media() == nil && c.startupBarWorkaroundEnabled() && shouldPrimeInitialBufferedSession(contentType, live) {
+		if err := c.primeInitialBufferedSession(mediaURL, contentType); err != nil {
+			c.Log().Warn().Str("Method", "Load").Err(err).Msg("initial session prime failed, falling back to direct load")
+		}
+	}
+
 	var lastErr error
 	for attempt := range 5 {
 		if !c.IsConnected() {
@@ -167,48 +365,16 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 			return nil
 		}
 
-		c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Msg("launching default receiver")
-		if err := LaunchDefaultReceiver(c.conn); err != nil {
-			lastErr = err
-			if isTimeoutError(err) && attempt < 5 {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Err(err).Msg("timeout, TV may be waking up, retrying...")
-				if !c.IsConnected() {
-					c.Log().Debug().Str("Method", "Load").Msg("connection closed during retry wait, aborting silently")
-					return nil
-				}
-				time.Sleep(4 * time.Second)
-				continue
-			}
-			c.Log().Error().Str("Method", "Load").Err(err).Msg("launch receiver failed")
-			return fmt.Errorf("launch receiver: %w", err)
-		}
-
-		// Retry getting app state with backoff (handles "media receiver app not available")
-		var transportId string
-		for i := range 8 {
-			if !c.IsConnected() {
-				c.Log().Debug().Str("Method", "Load").Msg("connection closed during app update, aborting silently")
-				return nil
-			}
-
-			if err := c.app.Update(); err != nil {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", i+1).Err(err).Msg("app.Update retry")
-				time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
-				continue
-			}
-			app := c.app.App()
-			if app != nil && app.TransportId != "" {
-				transportId = app.TransportId
-				c.Log().Debug().Str("Method", "Load").Str("TransportId", transportId).Msg("got transport ID")
-				break
-			}
-			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+		app := c.app.App()
+		transportId := ""
+		if app != nil {
+			transportId = app.TransportId
 		}
 
 		if transportId == "" {
-			lastErr = fmt.Errorf("failed to get transport ID after retries")
-			if attempt < 5 {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Msg("no transport ID, TV may be waking up, retrying...")
+			lastErr = fmt.Errorf("failed to get transport ID after warm-up")
+			if attempt < 4 {
+				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt+1).Msg("no transport ID, retrying...")
 				if !c.IsConnected() {
 					c.Log().Debug().Str("Method", "Load").Msg("connection closed during retry wait, aborting silently")
 					return nil
@@ -216,7 +382,7 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 				time.Sleep(4 * time.Second)
 				continue
 			}
-			c.Log().Error().Str("Method", "Load").Msg("failed to get transport ID")
+			c.Log().Error().Str("Method", "Load").Err(lastErr).Msg("failed to get transport ID")
 			return lastErr
 		}
 

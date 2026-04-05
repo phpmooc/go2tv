@@ -110,6 +110,7 @@ func selectedChromecastControlClient(screen *FyneScreen) (*castprotocol.CastClie
 	if err != nil {
 		return nil, nil, fmt.Errorf("chromecast init: %w", err)
 	}
+	client.SetStartupBarWorkaroundEnabled(chromecastStartupBarWorkaroundEnabled())
 	client.LogOutput = screen.Debug
 
 	if err := client.Connect(); err != nil {
@@ -1059,6 +1060,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			startAfreshPlayButton(screen)
 			return
 		}
+		client.SetStartupBarWorkaroundEnabled(chromecastStartupBarWorkaroundEnabled())
 
 		// Enable debug logging (same pattern as TVPayload)
 		client.LogOutput = screen.Debug

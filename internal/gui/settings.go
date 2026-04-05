@@ -126,6 +126,14 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	})
 	rememberPlaybackPositionControls := container.NewGridWithColumns(2, rememberPlaybackPositionCheck, clearPlaybackHistoryButton)
 
+	chromecastStartupBarCheck := widget.NewCheck(lang.L("Hide Chromecast progress bar on first play"), func(enabled bool) {
+		fyne.CurrentApp().Preferences().SetBool(chromecastStartupBarWorkaroundPref, enabled)
+		if s.chromecastClient != nil {
+			s.chromecastClient.SetStartupBarWorkaroundEnabled(enabled)
+		}
+	})
+	chromecastStartupBarCheck.SetChecked(chromecastStartupBarWorkaroundEnabled())
+
 	ffmpegFolderReset := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		fyne.CurrentApp().Preferences().SetString("ffmpeg", "")
 		path := ffmpegDirDisplayPath("")
@@ -317,16 +325,12 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 
 	rtmpKeyContainer := container.NewBorder(nil, nil, nil, container.NewHBox(regenKeyBtn), streamKeyEntry)
 
-	generalSettings := container.NewBorder(
-		container.NewVBox(
-			newSettingsField(lang.L("Theme"), dropdownTheme),
-			newSettingsField(lang.L("Language"), dropdownLanguage),
-			newSettingsField("ffmpeg "+lang.L("Path"), ffmpegPathControls),
-		),
-		nil,
-		nil,
-		nil,
+	generalSettings := container.NewVBox(
+		newSettingsField(lang.L("Theme"), dropdownTheme),
+		newSettingsField(lang.L("Language"), dropdownLanguage),
+		newSettingsField("ffmpeg "+lang.L("Path"), ffmpegPathControls),
 		newSettingsCheckboxField(rememberPlaybackPositionControls),
+		newSettingsCheckboxField(chromecastStartupBarCheck),
 	)
 
 	autoNextSettings := container.NewVBox(
@@ -349,14 +353,14 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		nil,
 		nil,
 		nil,
-		widget.NewCard(lang.L("RTMP Server"), "", rtmpSettings),
+		widget.NewCard(lang.L("Diagnostics"), "", debugSettings),
 	)
 	rightColumn := container.NewBorder(
 		widget.NewCard(lang.L("Auto-Play Next File"), "", autoNextSettings),
 		nil,
 		nil,
 		nil,
-		widget.NewCard(lang.L("Diagnostics"), "", debugSettings),
+		widget.NewCard(lang.L("RTMP Server"), "", rtmpSettings),
 	)
 	settingsCategories := container.NewGridWithColumns(2, leftColumn, rightColumn)
 
