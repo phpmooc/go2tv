@@ -29,6 +29,7 @@ type tappedSlider struct {
 	*widget.Slider
 	screen *FyneScreen
 	end    string
+	ccDur  float64
 	mu     sync.Mutex
 }
 
@@ -98,15 +99,53 @@ func newTappableSlider(s *FyneScreen) *tappedSlider {
 	return slider
 }
 
+func (t *tappedSlider) chromecastSeekDuration() (float64, bool) {
+	if t.screen.mediaDuration > 0 {
+		return t.screen.mediaDuration, true
+	}
+
+	t.mu.Lock()
+	cached := t.ccDur
+	t.mu.Unlock()
+	if cached > 0 {
+		return cached, true
+	}
+
+	client := t.screen.activeChromecastPlaybackClient()
+	if client == nil {
+		return 0, false
+	}
+
+	status, err := client.GetStatus()
+	if err != nil || status.Duration <= 0 {
+		return 0, false
+	}
+
+	duration := float64(status.Duration)
+
+	t.mu.Lock()
+	t.ccDur = duration
+	t.mu.Unlock()
+
+	// Cache briefly while dragging to avoid hammering GetStatus.
+	go func() {
+		time.Sleep(time.Second)
+		t.mu.Lock()
+		t.ccDur = 0
+		t.mu.Unlock()
+	}()
+
+	return duration, true
+}
+
 func (t *tappedSlider) Dragged(e *fyne.DragEvent) {
 	t.Slider.Dragged(e)
 	t.screen.sliderActive = true
 
-	// Handle Chromecast with stored duration (transcoded streams)
-	if t.screen.mediaDuration > 0 {
-		cur := (t.screen.mediaDuration * t.Slider.Value) / t.Slider.Max
+	if duration, ok := t.chromecastSeekDuration(); ok {
+		cur := (duration * t.Slider.Value) / t.Slider.Max
 		reltime, _ := utils.SecondsToClockTime(int(cur))
-		total, _ := utils.SecondsToClockTime(int(t.screen.mediaDuration))
+		total, _ := utils.SecondsToClockTime(int(duration))
 		t.screen.CurrentPos.Set(reltime)
 		t.screen.EndPos.Set(total)
 		return
@@ -172,16 +211,9 @@ func (t *tappedSlider) DragEnd() {
 	if t.screen.State == "Playing" || t.screen.State == "Paused" {
 		// Handle Chromecast seeking
 		if client := t.screen.activeChromecastPlaybackClient(); client != nil {
-			// For transcoded streams, use stored duration (Chromecast only knows buffered duration)
-			var duration float64
-			if t.screen.mediaDuration > 0 {
-				duration = t.screen.mediaDuration
-			} else {
-				status, err := client.GetStatus()
-				if err != nil || status.Duration <= 0 {
-					return
-				}
-				duration = float64(status.Duration)
+			duration, ok := t.chromecastSeekDuration()
+			if !ok {
+				return
 			}
 			seekPos := int((t.screen.SlideBar.Value / t.screen.SlideBar.Max) * duration)
 			// Transcoded seek: use optimized helper that keeps connection open
@@ -211,16 +243,9 @@ func (t *tappedSlider) Tapped(p *fyne.PointEvent) {
 	if t.screen.State == "Playing" || t.screen.State == "Paused" {
 		// Handle Chromecast seeking
 		if client := t.screen.activeChromecastPlaybackClient(); client != nil {
-			// For transcoded streams, use stored duration (Chromecast only knows buffered duration)
-			var duration float64
-			if t.screen.mediaDuration > 0 {
-				duration = t.screen.mediaDuration
-			} else {
-				status, err := client.GetStatus()
-				if err != nil || status.Duration <= 0 {
-					return
-				}
-				duration = float64(status.Duration)
+			duration, ok := t.chromecastSeekDuration()
+			if !ok {
+				return
 			}
 
 			seekPos := int((t.screen.SlideBar.Value / t.screen.SlideBar.Max) * duration)
