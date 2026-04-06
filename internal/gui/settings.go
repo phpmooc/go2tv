@@ -126,14 +126,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	})
 	rememberPlaybackPositionControls := container.NewGridWithColumns(2, rememberPlaybackPositionCheck, clearPlaybackHistoryButton)
 
-	chromecastStartupBarCheck := widget.NewCheck(lang.L("Hide Chromecast progress bar on first play"), func(enabled bool) {
-		fyne.CurrentApp().Preferences().SetBool(chromecastStartupBarWorkaroundPref, enabled)
-		if s.chromecastClient != nil {
-			s.chromecastClient.SetStartupBarWorkaroundEnabled(enabled)
-		}
-	})
-	chromecastStartupBarCheck.SetChecked(chromecastStartupBarWorkaroundEnabled())
-
 	ffmpegFolderReset := widget.NewButtonWithIcon("", theme.CancelIcon(), func() {
 		fyne.CurrentApp().Preferences().SetString("ffmpeg", "")
 		path := ffmpegDirDisplayPath("")
@@ -330,7 +322,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		newSettingsField(lang.L("Language"), dropdownLanguage),
 		newSettingsField("ffmpeg "+lang.L("Path"), ffmpegPathControls),
 		newSettingsCheckboxField(rememberPlaybackPositionControls),
-		newSettingsCheckboxField(chromecastStartupBarCheck),
 	)
 
 	autoNextSettings := container.NewVBox(
