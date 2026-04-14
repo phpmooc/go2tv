@@ -97,6 +97,24 @@ func chromecastImageStatusReady(status *castprotocol.CastStatus) bool {
 	return status.PlayerState == "PLAYING" || status.PlayerState == "PAUSED"
 }
 
+func chromecastMediaTitle(screen *FyneScreen, fallback string) string {
+	if screen == nil {
+		return fallback
+	}
+	if screen.Screencast {
+		return "Screencast"
+	}
+	if title := strings.TrimSpace(screen.mediafile); title != "" {
+		return title
+	}
+	if screen.MediaText != nil {
+		if title := strings.TrimSpace(screen.MediaText.Text); title != "" {
+			return title
+		}
+	}
+	return fallback
+}
+
 func selectedChromecastControlClient(screen *FyneScreen) (*castprotocol.CastClient, func(), error) {
 	if screen.selectedDeviceType != devices.DeviceTypeChromecast || screen.selectedDevice.addr == "" {
 		return nil, nil, errors.New(lang.L("chromecast not connected"))
@@ -1089,7 +1107,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		}
 
 		go func() {
-			if err := client.Load(mediaURL, mediaType, 0, 0, "", true); err != nil {
+			if err := client.Load(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), 0, 0, "", true); err != nil {
 				if !screen.isChromecastActionCurrent(actionID) {
 					return
 				}
@@ -1362,7 +1380,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	go func() {
 		// Use LIVE stream type for URL streams (DMR shows LIVE badge, but buffer unchanged)
 		live := screen.ExternalMediaURL.Checked
-		if err := client.Load(mediaURL, mediaType, ffmpegSeek, screen.mediaDuration, subtitleURL, live); err != nil {
+		if err := client.Load(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), ffmpegSeek, screen.mediaDuration, subtitleURL, live); err != nil {
 			if !screen.isChromecastActionCurrent(actionID) {
 				return
 			}
@@ -1444,7 +1462,7 @@ func chromecastTranscodedSeek(screen *FyneScreen, seekPos int) {
 		// Load media on existing connection (skips 2-second receiver launch delay)
 		// No subtitles needed since they're burned in during transcoding
 		// live=false because this is local file playback (seeking)
-		if err := client.LoadOnExisting(mediaURL, mediaType, 0, screen.mediaDuration, "", false); err != nil {
+		if err := client.LoadOnExisting(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), 0, screen.mediaDuration, "", false); err != nil {
 			check(screen, fmt.Errorf("chromecast seek load: %w", err))
 			return
 		}
@@ -1905,7 +1923,7 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			if client == nil || !client.IsConnected() {
 				return
 			}
-			if err := client.LoadOnExisting(mediaURL, mediaType, ffmpegSeek, screen.mediaDuration, subtitleURL, false); err != nil {
+			if err := client.LoadOnExisting(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), ffmpegSeek, screen.mediaDuration, subtitleURL, false); err != nil {
 				if !screen.isChromecastActionCurrent(actionID) {
 					return
 				}

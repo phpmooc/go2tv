@@ -346,7 +346,7 @@ func runChromecastCLI(ctx context.Context, cancel context.CancelFunc, deviceURL,
 	go func() {
 		// Use LIVE stream type for URL/stdin streams to avoid ~30s buffering delay
 		_, isStream := mediaFile.(io.ReadCloser)
-		if err := client.Load(mediaURL, mediaType, 0, mediaDuration, subtitleURL, isStream); err != nil {
+		if err := client.Load(mediaURL, mediaType, mediaPath, 0, mediaDuration, subtitleURL, isStream); err != nil {
 			fmt.Fprintf(os.Stderr, "chromecast load: %v\n", err)
 		}
 	}()

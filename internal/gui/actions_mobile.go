@@ -26,6 +26,23 @@ import (
 	"go2tv.app/go2tv/v2/utils"
 )
 
+func chromecastMediaTitle(screen *FyneScreen, fallback string) string {
+	if screen == nil {
+		return fallback
+	}
+	if screen.MediaText != nil {
+		if title := strings.TrimSpace(screen.MediaText.Text); title != "" {
+			return title
+		}
+	}
+	if screen.mediafile != nil {
+		if title := strings.TrimSpace(screen.mediafile.Name()); title != "" {
+			return title
+		}
+	}
+	return fallback
+}
+
 func muteAction(screen *FyneScreen) {
 	w := screen.Current
 
@@ -841,7 +858,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	// Use LIVE stream type for URL streams (DMR shows LIVE badge, but buffer unchanged)
 	go func() {
 		live := screen.ExternalMediaURL.Checked
-		if err := client.Load(mediaURL, mediaType, 0, 0, subtitleURL, live); err != nil {
+		if err := client.Load(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), 0, 0, subtitleURL, live); err != nil {
 			if !screen.isChromecastActionCurrent(actionID) {
 				return
 			}
