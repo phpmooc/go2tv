@@ -23,7 +23,7 @@ require (
 	github.com/sirupsen/logrus v1.9.4
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/stretchr/testify v1.11.1
-	go2tv.app/screencast v0.0.0-20260320222909-962c66128533
+	go2tv.app/screencast v0.0.0-20260415181439-be009319f291
 	golang.org/x/mod v0.34.0
 	golang.org/x/time v0.15.0
 	gopkg.in/ini.v1 v1.67.1
