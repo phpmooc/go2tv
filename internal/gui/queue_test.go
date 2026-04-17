@@ -234,6 +234,47 @@ func TestSelectMediaPathsSingleFileCreatesQueue(t *testing.T) {
 	}
 }
 
+func TestSelectMediaPathsUppercaseExtensionCreatesQueue(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dir := t.TempDir()
+	mediaPath := filepath.Join(dir, "single.MKv")
+	screen := &FyneScreen{
+		mediaFormats:       []string{".mkv"},
+		videoFormats:       []string{".mkv"},
+		MediaText:          widget.NewEntry(),
+		SubsText:           widget.NewEntry(),
+		SelectInternalSubs: widget.NewSelect(nil, nil),
+		CustomSubsCheck:    widget.NewCheck("", nil),
+		PlayPause:          widget.NewButton("", nil),
+	}
+
+	if err := selectMediaPaths(screen, []string{mediaPath}); err != nil {
+		t.Fatalf("selectMediaPaths failed: %v", err)
+	}
+	fyne.DoAndWait(func() {})
+
+	if screen.SessionQueue == nil {
+		t.Fatalf("expected mixed-case media selection to create queue")
+	}
+	if len(screen.SessionQueue.Items) != 1 {
+		t.Fatalf("expected single queue item, got %d", len(screen.SessionQueue.Items))
+	}
+	if screen.SessionQueue.Items[0].MediaType != "video" {
+		t.Fatalf("expected video queue item, got %q", screen.SessionQueue.Items[0].MediaType)
+	}
+	if screen.mediafile != mediaPath {
+		t.Fatalf("expected mediafile %q, got %q", mediaPath, screen.mediafile)
+	}
+	if screen.MediaText.Text != filepath.Base(mediaPath) {
+		t.Fatalf("expected media text %q, got %q", filepath.Base(mediaPath), screen.MediaText.Text)
+	}
+	if screen.SessionQueue.CurrentIndex != 0 {
+		t.Fatalf("expected current queue index 0, got %d", screen.SessionQueue.CurrentIndex)
+	}
+}
+
 func TestQueueInteractionsLocked(t *testing.T) {
 	app := test.NewApp()
 	defer app.Quit()

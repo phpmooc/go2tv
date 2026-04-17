@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -167,7 +168,7 @@ func (q *SessionQueue) move(index, delta int) int {
 }
 
 func (screen *FyneScreen) mediaKindForPath(mediaPath string) string {
-	ext := filepath.Ext(mediaPath)
+	ext := strings.ToLower(filepath.Ext(mediaPath))
 
 	switch {
 	case slices.Contains(screen.imageFormats, ext):

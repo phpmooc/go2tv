@@ -90,3 +90,20 @@ func TestServeContent(t *testing.T) {
 		})
 	}
 }
+
+func TestServeMediaHandlerUppercaseSubtitleAddsCORS(t *testing.T) {
+	srv := NewServer("127.0.0.1:0")
+	srv.AddHandler("/SUBS.SRT", nil, nil, []byte("1\n00:00:00,000 --> 00:00:01,000\nhello\n"))
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/SUBS.SRT", nil)
+
+	srv.ServeMediaHandler()(w, r)
+
+	if w.Result().StatusCode != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, w.Result().StatusCode)
+	}
+	if got := w.Result().Header.Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("expected CORS header '*', got %q", got)
+	}
+}

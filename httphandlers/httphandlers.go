@@ -191,8 +191,10 @@ func (s *HTTPserver) StartServer(serverStarted chan<- error, media, subtitles an
 // ServeMediaHandler is a helper method used to properly handle media and subtitle streaming.
 func (s *HTTPserver) ServeMediaHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		requestPathLower := strings.ToLower(r.URL.Path)
+
 		// Add CORS headers for subtitle files (needed for Chromecast)
-		if strings.HasSuffix(r.URL.Path, ".vtt") || strings.HasSuffix(r.URL.Path, ".srt") {
+		if strings.HasSuffix(requestPathLower, ".vtt") || strings.HasSuffix(requestPathLower, ".srt") {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
@@ -247,11 +249,11 @@ func (s *HTTPserver) ServeMediaHandler() http.HandlerFunc {
 		}
 
 		// Explicitly set Content-Type for HLS files
-		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+		if strings.HasSuffix(requestPathLower, ".m3u8") {
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
-		} else if strings.HasSuffix(r.URL.Path, ".ts") {
+		} else if strings.HasSuffix(requestPathLower, ".ts") {
 			w.Header().Set("Content-Type", "video/mp2t")
-		} else if strings.HasSuffix(r.URL.Path, ".mp4") || strings.HasSuffix(r.URL.Path, ".m4s") {
+		} else if strings.HasSuffix(requestPathLower, ".mp4") || strings.HasSuffix(requestPathLower, ".m4s") {
 			w.Header().Set("Content-Type", "video/mp4")
 		}
 
@@ -346,6 +348,8 @@ func (s *HTTPserver) AddHLSHandler(urlPrefix, dir string) {
 	fileServer := http.FileServer(http.Dir(dir))
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPathLower := strings.ToLower(r.URL.Path)
+
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 
@@ -354,17 +358,17 @@ func (s *HTTPserver) AddHLSHandler(urlPrefix, dir string) {
 			return
 		}
 
-		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+		if strings.HasSuffix(requestPathLower, ".m3u8") {
 			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")
-		} else if strings.HasSuffix(r.URL.Path, ".ts") {
+		} else if strings.HasSuffix(requestPathLower, ".ts") {
 			w.Header().Set("Content-Type", "video/MP2T")
 			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			w.Header().Set("Pragma", "no-cache")
 			w.Header().Set("Expires", "0")
-		} else if strings.HasSuffix(r.URL.Path, ".mp4") || strings.HasSuffix(r.URL.Path, ".m4s") {
+		} else if strings.HasSuffix(requestPathLower, ".mp4") || strings.HasSuffix(requestPathLower, ".m4s") {
 			w.Header().Set("Content-Type", "video/mp4")
 		}
 
@@ -442,7 +446,8 @@ func serveContent(w http.ResponseWriter, r *http.Request, tv *soapcalls.TVPayloa
 
 func serveContentBytes(w http.ResponseWriter, r *http.Request, mediaType string, f []byte) {
 	// Add CORS for subtitle files (needed for Chromecast)
-	if strings.HasSuffix(r.URL.Path, ".vtt") || strings.HasSuffix(r.URL.Path, ".srt") {
+	requestPathLower := strings.ToLower(r.URL.Path)
+	if strings.HasSuffix(requestPathLower, ".vtt") || strings.HasSuffix(requestPathLower, ".srt") {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 	}
 

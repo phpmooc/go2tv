@@ -704,7 +704,7 @@ func (a *Application) PlayableMediaType(filename string) bool {
 		return true
 	}
 
-	switch path.Ext(filename) {
+	switch strings.ToLower(path.Ext(filename)) {
 	case ".avi":
 		return true
 	}

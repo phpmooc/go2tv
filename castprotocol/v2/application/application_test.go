@@ -42,3 +42,11 @@ func TestApplicationStart(t *testing.T) {
 	app := application.NewApplication(application.WithConnection(conn))
 	assertions.NoError(app.Start(mockAddr, mockPort))
 }
+
+func TestPlayableMediaTypeUppercaseExtension(t *testing.T) {
+	app := application.NewApplication()
+
+	if !app.PlayableMediaType("clip.AVI") {
+		t.Fatal("expected uppercase AVI extension to be playable")
+	}
+}
