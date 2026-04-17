@@ -2,11 +2,13 @@ package devices
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -46,12 +48,19 @@ var (
 	listenUDP               = net.ListenUDP
 	discoveryLogOutput      io.Writer
 	discoveryLogMu          sync.Mutex
+	discoverySummaryState   = make(map[string]summaryState)
 )
+
+type summaryState struct {
+	lastLine string
+	repeats  int
+}
 
 // SetDiscoveryLogOutput enables lightweight discovery debug logs.
 func SetDiscoveryLogOutput(w io.Writer) {
 	discoveryLogMu.Lock()
 	discoveryLogOutput = w
+	clear(discoverySummaryState)
 	discoveryLogMu.Unlock()
 }
 
@@ -64,6 +73,81 @@ func discoveryDebugf(format string, args ...any) {
 	}
 
 	_, _ = fmt.Fprintf(discoveryLogOutput, "discovery: "+format+"\n", args...)
+}
+
+func discoverySummaryf(key string, format string, args ...any) {
+	discoveryLogMu.Lock()
+	defer discoveryLogMu.Unlock()
+
+	if discoveryLogOutput == nil {
+		return
+	}
+
+	line := fmt.Sprintf(format, args...)
+	state := discoverySummaryState[key]
+	if state.lastLine == line {
+		state.repeats++
+		discoverySummaryState[key] = state
+		return
+	}
+
+	if state.repeats > 0 {
+		_, _ = fmt.Fprintf(discoveryLogOutput, "discovery: %s repeated=%d\n", key, state.repeats)
+	}
+
+	discoverySummaryState[key] = summaryState{lastLine: line}
+	_, _ = fmt.Fprintf(discoveryLogOutput, "discovery: %s\n", line)
+}
+
+func formatSummaryList(values []string, maxItems int) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	unique := sorted[:0]
+	for _, value := range sorted {
+		if len(unique) > 0 && unique[len(unique)-1] == value {
+			continue
+		}
+		unique = append(unique, value)
+	}
+
+	if maxItems <= 0 || len(unique) <= maxItems {
+		return strings.Join(unique, ",")
+	}
+
+	return fmt.Sprintf("%s,+%d more", strings.Join(unique[:maxItems], ","), len(unique)-maxItems)
+}
+
+func deviceNames(devices []Device, maxItems int) string {
+	names := make([]string, 0, len(devices))
+	for _, device := range devices {
+		names = append(names, device.Name)
+	}
+
+	return formatSummaryList(names, maxItems)
+}
+
+func locationHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+
+	return u.Host
+}
+
+func discoveryErrKind(err error) string {
+	switch {
+	case err == nil:
+		return "none"
+	case stderrors.Is(err, ErrNoDeviceAvailable):
+		return "no_device"
+	default:
+		return "error"
+	}
 }
 
 // IsChromecastURL returns true if the URL points to a Chromecast device (port 8009).
@@ -82,7 +166,8 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	// We intentionally do not filter by ST value here because some vendors reply with
 	// non-AVTransport ST values while still exposing AVTransport in LOCATION XML.
 	locations := make(map[string]struct{})
-	var loadErrors, filteredDevices, unnamedDevices int
+	var loadErrors, filteredDevices, unnamedDevices, dupNameCount int
+	loadErrorHosts := make([]string, 0)
 
 	port := 3339
 
@@ -129,6 +214,7 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 		devices, err := loadDevicesFromLocation(context.Background(), loc)
 		if err != nil {
 			loadErrors++
+			loadErrorHosts = append(loadErrorHosts, locationHost(loc))
 			continue
 		}
 
@@ -163,6 +249,7 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 
 	for fn, c := range dupNames {
 		if c > 1 {
+			dupNameCount++
 			loc := deviceList[fn]
 			delete(deviceList, fn)
 			fn = fn + " (" + loc + ")"
@@ -171,14 +258,18 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	}
 
 	if len(deviceList) == 0 {
-		discoveryDebugf(
-			"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d filtered=%d unnamed=%d returned=0",
+		discoverySummaryf(
+			"LoadSSDPservices summary",
+			"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d error_hosts=%q filtered=%d duplicate_names=%d unnamed=%d returned=0 devices=%q",
 			addrString,
 			len(list),
 			len(locations),
 			loadErrors,
+			formatSummaryList(loadErrorHosts, 3),
 			filteredDevices,
+			dupNameCount,
 			unnamedDevices,
+			"",
 		)
 		return nil, ErrNoDeviceAvailable
 	}
@@ -192,15 +283,19 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 			Type: DeviceTypeDLNA,
 		})
 	}
-	discoveryDebugf(
-		"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d filtered=%d unnamed=%d returned=%d",
+	discoverySummaryf(
+		"LoadSSDPservices summary",
+		"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d error_hosts=%q filtered=%d duplicate_names=%d unnamed=%d returned=%d devices=%q",
 		addrString,
 		len(list),
 		len(locations),
 		loadErrors,
+		formatSummaryList(loadErrorHosts, 3),
 		filteredDevices,
+		dupNameCount,
 		unnamedDevices,
 		len(result),
+		deviceNames(result, 3),
 	)
 
 	return result, nil
@@ -265,24 +360,31 @@ func LoadAllDevices(delay int) ([]Device, error) {
 			// Return partial results if timeout occurs
 			if len(combined) > 0 {
 				sortDevices(combined)
-				discoveryDebugf(
-					"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%t chromecast=%d combined=%d",
+				discoverySummaryf(
+					"LoadAllDevices summary",
+					"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=%d combined_names=%q",
 					delay,
 					resultsReceived,
 					len(dlnaResult.devices),
-					dlnaResult.err != nil,
+					discoveryErrKind(dlnaResult.err),
+					deviceNames(dlnaResult.devices, 3),
 					len(ccResult.devices),
+					deviceNames(ccResult.devices, 3),
 					len(combined),
+					deviceNames(combined, 4),
 				)
 				return combined, nil
 			}
-			discoveryDebugf(
-				"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%t chromecast=%d combined=0",
+			discoverySummaryf(
+				"LoadAllDevices summary",
+				"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=0",
 				delay,
 				resultsReceived,
 				len(dlnaResult.devices),
-				dlnaResult.err != nil,
+				discoveryErrKind(dlnaResult.err),
+				deviceNames(dlnaResult.devices, 3),
 				len(ccResult.devices),
+				deviceNames(ccResult.devices, 3),
 			)
 			return nil, ErrNoDeviceAvailable
 		}
@@ -290,23 +392,30 @@ func LoadAllDevices(delay int) ([]Device, error) {
 
 	if len(combined) > 0 {
 		sortDevices(combined)
-		discoveryDebugf(
-			"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%t chromecast=%d combined=%d",
+		discoverySummaryf(
+			"LoadAllDevices summary",
+			"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=%d combined_names=%q",
 			delay,
 			len(dlnaResult.devices),
-			dlnaResult.err != nil,
+			discoveryErrKind(dlnaResult.err),
+			deviceNames(dlnaResult.devices, 3),
 			len(ccResult.devices),
+			deviceNames(ccResult.devices, 3),
 			len(combined),
+			deviceNames(combined, 4),
 		)
 		return combined, nil
 	}
 
-	discoveryDebugf(
-		"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%t chromecast=%d combined=0",
+	discoverySummaryf(
+		"LoadAllDevices summary",
+		"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=0",
 		delay,
 		len(dlnaResult.devices),
-		dlnaResult.err != nil,
+		discoveryErrKind(dlnaResult.err),
+		deviceNames(dlnaResult.devices, 3),
 		len(ccResult.devices),
+		deviceNames(ccResult.devices, 3),
 	)
 	return nil, ErrNoDeviceAvailable
 }

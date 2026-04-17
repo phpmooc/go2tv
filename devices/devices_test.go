@@ -1,9 +1,11 @@
 package devices
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/alexballas/go-ssdp"
@@ -98,6 +100,38 @@ func TestLoadSSDPServicesAllowsMissingConnectionManager(t *testing.T) {
 		t.Fatalf("LoadSSDPservices() name = %q, want %q", devs[0].Name, "Legacy Renderer")
 	}
 }
+
+func TestDiscoverySummaryfSuppressesDuplicates(t *testing.T) {
+	var buf bytes.Buffer
+	SetDiscoveryLogOutput(&buf)
+	t.Cleanup(func() {
+		SetDiscoveryLogOutput(nil)
+	})
+
+	discoverySummaryf("LoadAllDevices summary", "LoadAllDevices summary delay=%d combined=%d", 1, 2)
+	discoverySummaryf("LoadAllDevices summary", "LoadAllDevices summary delay=%d combined=%d", 1, 2)
+	discoverySummaryf("LoadAllDevices summary", "LoadAllDevices summary delay=%d combined=%d", 1, 2)
+	discoverySummaryf("LoadAllDevices summary", "LoadAllDevices summary delay=%d combined=%d", 2, 3)
+
+	got := strings.TrimSpace(buf.String())
+	want := strings.Join([]string{
+		"discovery: LoadAllDevices summary delay=1 combined=2",
+		"discovery: LoadAllDevices summary repeated=2",
+		"discovery: LoadAllDevices summary delay=2 combined=3",
+	}, "\n")
+
+	if got != want {
+		t.Fatalf("discoverySummaryf() output = %q, want %q", got, want)
+	}
+}
+
+func TestFormatSummaryListDedupesAndCaps(t *testing.T) {
+	got := formatSummaryList([]string{"b", "a", "a", "c"}, 2)
+	if got != "a,b,+1 more" {
+		t.Fatalf("formatSummaryList() = %q, want %q", got, "a,b,+1 more")
+	}
+}
+
 func TestCheckInterfacesForPortSkipsBadInterfaceAddresses(t *testing.T) {
 	origInterfaceAddrs := interfaceAddrs
 	origIfaceAddrLookup := ifaceAddrLookup
