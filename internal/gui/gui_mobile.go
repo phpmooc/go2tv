@@ -86,8 +86,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 		}
 	}
 
-	// Start Chromecast discovery in background
-	go devices.StartChromecastDiscoveryLoop(ctx)
+	devices.StartDiscovery(ctx)
 
 	if app := fyne.CurrentApp(); app != nil {
 		app.Lifecycle().SetOnStopped(func() {

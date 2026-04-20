@@ -534,8 +534,8 @@ func stopAction(screen *FyneScreen) {
 	}()
 }
 
-func getDevices(delay int) ([]devType, error) {
-	deviceList, err := devices.LoadAllDevices(delay)
+func getDevices() ([]devType, error) {
+	deviceList, err := devices.LoadAllDevices()
 	if err != nil {
 		return nil, fmt.Errorf("getDevices error: %w", err)
 	}
@@ -873,7 +873,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 
 // chromecastStatusWatcher polls Chromecast status and updates UI.
 func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID uint64) {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	var mediaStarted bool

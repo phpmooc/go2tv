@@ -398,7 +398,7 @@ type listDevicesModel struct {
 
 func checkDevices() tea.Cmd {
 	return func() tea.Msg {
-		deviceList, _ := devices.LoadAllDevices(2)
+		deviceList, _ := devices.LoadAllDevices()
 
 		var rMsg refreshMsg
 		for _, dev := range deviceList {
@@ -413,7 +413,7 @@ func checkDevices() tea.Cmd {
 }
 
 func (m listDevicesModel) Init() tea.Cmd {
-	devices.StartChromecastDiscoveryLoop(context.Background())
+	devices.StartDiscovery(context.Background())
 	return checkDevices()
 }
 

@@ -390,7 +390,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	// Avoid parallel execution of getDevices.
 	blockGetDevices := make(chan struct{})
 	go func() {
-		datanew, err := getDevices(1)
+		datanew, err := getDevices()
 		if err != nil {
 			datanew = nil
 		}
@@ -921,15 +921,15 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 }
 
 func refreshDevList(s *FyneScreen, data *[]devType) {
-	refreshDevices := time.NewTicker(2 * time.Second)
+	refreshDevices := time.NewTimer(0)
 
-	_, err := getDevices(1)
+	_, err := getDevices()
 	if err != nil && !errors.Is(err, devices.ErrNoDeviceAvailable) {
 		check(s, err)
 	}
 
 	for range refreshDevices.C {
-		newDevices, _ := getDevices(1)
+		newDevices, _ := getDevices()
 
 		var oldDevices []devType
 		var selectedAddr string
@@ -1006,6 +1006,8 @@ func refreshDevList(s *FyneScreen, data *[]devType) {
 
 			s.DeviceList.Refresh()
 		})
+
+		refreshDevices.Reset(time.Second)
 	}
 }
 

@@ -20,6 +20,9 @@ import (
 const (
 	DeviceTypeDLNA       = "DLNA"
 	DeviceTypeChromecast = "Chromecast"
+	dlnaDiscoveryDelay   = 2
+	dlnaDiscoveryPause   = time.Second
+	dlnaLocationTimeout  = 1500 * time.Millisecond
 )
 
 type Device struct {
@@ -49,6 +52,9 @@ var (
 	discoveryLogOutput      io.Writer
 	discoveryLogMu          sync.Mutex
 	discoverySummaryState   = make(map[string]summaryState)
+	dlnaDevices             []Device
+	dlnaMu                  sync.RWMutex
+	discoveryStartOnce      sync.Once
 )
 
 type summaryState struct {
@@ -139,17 +145,6 @@ func locationHost(raw string) string {
 	return u.Host
 }
 
-func discoveryErrKind(err error) string {
-	switch {
-	case err == nil:
-		return "none"
-	case stderrors.Is(err, ErrNoDeviceAvailable):
-		return "no_device"
-	default:
-		return "error"
-	}
-}
-
 // IsChromecastURL returns true if the URL points to a Chromecast device (port 8009).
 func IsChromecastURL(deviceURL string) bool {
 	u, err := url.Parse(deviceURL)
@@ -211,7 +206,9 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	var allDevices []deviceEntry
 
 	for loc := range locations {
-		devices, err := loadDevicesFromLocation(context.Background(), loc)
+		locCtx, cancel := context.WithTimeout(context.Background(), dlnaLocationTimeout)
+		devices, err := loadDevicesFromLocation(locCtx, loc)
+		cancel()
 		if err != nil {
 			loadErrors++
 			loadErrorHosts = append(loadErrorHosts, locationHost(loc))
@@ -300,6 +297,65 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 
 	return result, nil
 }
+
+// StartDiscovery starts the background discovery loops once for the process.
+func StartDiscovery(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	discoveryStartOnce.Do(func() {
+		discoveryDebugf("Discovery loops starting")
+		StartChromecastDiscoveryLoop(ctx)
+		startDLNADiscoveryLoop(ctx)
+	})
+}
+
+func startDLNADiscoveryLoop(ctx context.Context) {
+	go func() {
+		pollTimer := time.NewTimer(0)
+		defer pollTimer.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-pollTimer.C:
+			}
+
+			refreshDLNADevices()
+			pollTimer.Reset(dlnaDiscoveryPause)
+		}
+	}()
+}
+
+func refreshDLNADevices() {
+	devices, err := LoadSSDPservices(dlnaDiscoveryDelay)
+	if err != nil {
+		if stderrors.Is(err, ErrNoDeviceAvailable) {
+			setDLNADevices(nil)
+			return
+		}
+
+		discoveryDebugf("DLNA discovery scan error: %v", err)
+		return
+	}
+
+	setDLNADevices(devices)
+}
+
+func setDLNADevices(devices []Device) {
+	dlnaMu.Lock()
+	dlnaDevices = append([]Device(nil), devices...)
+	dlnaMu.Unlock()
+}
+
+func getDLNADevices() []Device {
+	dlnaMu.RLock()
+	defer dlnaMu.RUnlock()
+
+	return append([]Device(nil), dlnaDevices...)
+}
 func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 	if dev == nil {
 		return false
@@ -308,116 +364,40 @@ func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 	return dev.AvtransportControlURL != ""
 }
 
-// LoadAllDevices returns a combined slice of DLNA and Chromecast devices.
-// It runs both discovery mechanisms concurrently and returns partial results
-// immediately without waiting for both to complete. This ensures delays in
-// one protocol don't block the other.
-func LoadAllDevices(delay int) ([]Device, error) {
-	type deviceResult struct {
-		devices []Device
-		err     error
-	}
+// LoadAllDevices returns the latest cached DLNA and Chromecast devices.
+func LoadAllDevices() ([]Device, error) {
+	dlna := getDLNADevices()
+	chromecast := getChromecastDevicesSnapshot()
 
-	var dlnaResult, ccResult deviceResult
+	combined := make([]Device, 0, len(dlna)+len(chromecast))
+	combined = append(combined, dlna...)
+	combined = append(combined, chromecast...)
 
-	dlnaChan := make(chan deviceResult, 1)
-	ccChan := make(chan deviceResult, 1)
-
-	// Launch DLNA discovery in background
-	go func() {
-		devices, err := LoadSSDPservices(delay)
-		dlnaChan <- deviceResult{devices: devices, err: err}
-	}()
-
-	// Launch Chromecast discovery in background (instant, reads from cache)
-	go func() {
-		devices := GetChromecastDevices()
-		ccChan <- deviceResult{devices: devices, err: nil}
-	}()
-
-	// Collect results as they arrive, with timeout
-	combined := make([]Device, 0)
-	timeout := time.After(time.Duration(delay+1) * time.Second)
-	resultsReceived := 0
-
-	for resultsReceived < 2 {
-		select {
-		case result := <-dlnaChan:
-			dlnaResult = result
-			if result.err == nil {
-				combined = append(combined, result.devices...)
-			}
-			resultsReceived++
-
-		case result := <-ccChan:
-			ccResult = result
-			if result.devices != nil {
-				combined = append(combined, result.devices...)
-			}
-			resultsReceived++
-
-		case <-timeout:
-			// Return partial results if timeout occurs
-			if len(combined) > 0 {
-				sortDevices(combined)
-				discoverySummaryf(
-					"LoadAllDevices summary",
-					"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=%d combined_names=%q",
-					delay,
-					resultsReceived,
-					len(dlnaResult.devices),
-					discoveryErrKind(dlnaResult.err),
-					deviceNames(dlnaResult.devices, 3),
-					len(ccResult.devices),
-					deviceNames(ccResult.devices, 3),
-					len(combined),
-					deviceNames(combined, 4),
-				)
-				return combined, nil
-			}
-			discoverySummaryf(
-				"LoadAllDevices summary",
-				"LoadAllDevices summary delay=%d timeout=true results_received=%d dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=0",
-				delay,
-				resultsReceived,
-				len(dlnaResult.devices),
-				discoveryErrKind(dlnaResult.err),
-				deviceNames(dlnaResult.devices, 3),
-				len(ccResult.devices),
-				deviceNames(ccResult.devices, 3),
-			)
-			return nil, ErrNoDeviceAvailable
-		}
-	}
-
-	if len(combined) > 0 {
-		sortDevices(combined)
+	if len(combined) == 0 {
 		discoverySummaryf(
 			"LoadAllDevices summary",
-			"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=%d combined_names=%q",
-			delay,
-			len(dlnaResult.devices),
-			discoveryErrKind(dlnaResult.err),
-			deviceNames(dlnaResult.devices, 3),
-			len(ccResult.devices),
-			deviceNames(ccResult.devices, 3),
-			len(combined),
-			deviceNames(combined, 4),
+			"LoadAllDevices summary cached=true dlna=%d dlna_names=%q chromecast=%d chromecast_names=%q combined=0",
+			len(dlna),
+			deviceNames(dlna, 3),
+			len(chromecast),
+			deviceNames(chromecast, 3),
 		)
-		return combined, nil
+		return nil, ErrNoDeviceAvailable
 	}
 
+	sortDevices(combined)
 	discoverySummaryf(
 		"LoadAllDevices summary",
-		"LoadAllDevices summary delay=%d timeout=false dlna=%d dlna_err=%s dlna_names=%q chromecast=%d chromecast_names=%q combined=0",
-		delay,
-		len(dlnaResult.devices),
-		discoveryErrKind(dlnaResult.err),
-		deviceNames(dlnaResult.devices, 3),
-		len(ccResult.devices),
-		deviceNames(ccResult.devices, 3),
+		"LoadAllDevices summary cached=true dlna=%d dlna_names=%q chromecast=%d chromecast_names=%q combined=%d combined_names=%q",
+		len(dlna),
+		deviceNames(dlna, 3),
+		len(chromecast),
+		deviceNames(chromecast, 3),
+		len(combined),
+		deviceNames(combined, 4),
 	)
-	return nil, ErrNoDeviceAvailable
+
+	return combined, nil
 }
 
 // sortDevices sorts devices by type (DLNA first, then Chromecast)

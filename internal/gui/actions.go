@@ -1474,7 +1474,7 @@ func chromecastTranscodedSeek(screen *FyneScreen, seekPos int) {
 // chromecastStatusWatcher polls Chromecast status and updates UI.
 // Triggers auto-play next via Fini() when media ends, consistent with DLNA.
 func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID uint64) {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	// Track actual playback start. BUFFERING alone is not enough for live streams
@@ -1634,7 +1634,7 @@ func startAfreshPlayButton(screen *FyneScreen) {
 }
 
 func gaplessMediaWatcher(ctx context.Context, screen *FyneScreen, payload *soapcalls.TVPayload) {
-	t := time.NewTicker(1 * time.Second)
+	t := time.NewTicker(time.Second)
 out:
 	for {
 		select {
@@ -2084,8 +2084,8 @@ func stopAction(screen *FyneScreen) {
 
 }
 
-func getDevices(delay int) ([]devType, error) {
-	deviceList, err := devices.LoadAllDevices(delay)
+func getDevices() ([]devType, error) {
+	deviceList, err := devices.LoadAllDevices()
 	if err != nil {
 		return nil, fmt.Errorf("getDevices error: %w", err)
 	}
@@ -2460,7 +2460,7 @@ func waitForRTMPStream(screen *FyneScreen) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	for {

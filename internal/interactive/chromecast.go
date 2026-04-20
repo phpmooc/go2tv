@@ -106,7 +106,7 @@ func (p *ChromecastScreen) InterInit(mediaPath string, c chan error) {
 	p.EmitMsg(p.getLastAction())
 
 	// Status polling goroutine
-	statusTicker := time.NewTicker(1 * time.Second)
+	statusTicker := time.NewTicker(time.Second)
 	var mediaStarted bool
 	go func() {
 		for range statusTicker.C {

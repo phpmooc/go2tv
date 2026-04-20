@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/alexballas/go-ssdp"
@@ -179,6 +180,66 @@ func TestCheckInterfacesForPortSkipsBadInterfaceAddresses(t *testing.T) {
 
 	if listenAttempts != 2 {
 		t.Fatalf("listen attempts = %d, want 2", listenAttempts)
+	}
+}
+
+func TestLoadAllDevicesReturnsCachedResults(t *testing.T) {
+	origDLNA := append([]Device(nil), dlnaDevices...)
+	ccMu.Lock()
+	origChromecast := make(map[string]castDevice, len(chromeCastDevices))
+	for addr, device := range chromeCastDevices {
+		origChromecast[addr] = device
+	}
+	ccMu.Unlock()
+	t.Cleanup(func() {
+		setDLNADevices(origDLNA)
+		ccMu.Lock()
+		chromeCastDevices = origChromecast
+		ccMu.Unlock()
+	})
+
+	setDLNADevices([]Device{{
+		Name: "Bedroom TV",
+		Addr: "http://192.168.1.20:1400/xml/device_description.xml",
+		Type: DeviceTypeDLNA,
+	}})
+	ccMu.Lock()
+	chromeCastDevices = map[string]castDevice{
+		"192.168.1.30:8009": {Name: "Living Room"},
+	}
+	ccMu.Unlock()
+
+	devs, err := LoadAllDevices()
+	if err != nil {
+		t.Fatalf("LoadAllDevices() err = %v, want nil", err)
+	}
+
+	if len(devs) != 2 {
+		t.Fatalf("LoadAllDevices() len = %d, want 2", len(devs))
+	}
+
+	if devs[0].Type != DeviceTypeChromecast || devs[1].Type != DeviceTypeDLNA {
+		t.Fatalf("LoadAllDevices() types = %q, %q, want %q then %q", devs[0].Type, devs[1].Type, DeviceTypeChromecast, DeviceTypeDLNA)
+	}
+}
+
+func TestStartDiscoveryStartsLoopsOnce(t *testing.T) {
+	var buf bytes.Buffer
+	SetDiscoveryLogOutput(&buf)
+	t.Cleanup(func() {
+		discoveryStartOnce = sync.Once{}
+		SetDiscoveryLogOutput(nil)
+	})
+
+	discoveryStartOnce = sync.Once{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	StartDiscovery(ctx)
+	StartDiscovery(ctx)
+
+	if got := strings.Count(buf.String(), "discovery: Discovery loops starting\n"); got != 1 {
+		t.Fatalf("Discovery loops starting logs = %d, want 1", got)
 	}
 }
 

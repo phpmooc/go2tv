@@ -20,7 +20,7 @@ const (
 	// mDNS query timeout per request
 	chromecastQueryTimeout = 750 * time.Millisecond
 	// Faster polling while cache is empty for quick first discovery
-	chromecastPollIntervalFast = 1 * time.Second
+	chromecastPollIntervalFast = time.Second
 	// Slower polling once at least one device is known to reduce network load
 	chromecastPollIntervalSlow = 4 * time.Second
 	// Interface refresh cadence for add/remove changes
@@ -355,6 +355,11 @@ func GetChromecastDevices() []Device {
 			warmupChromecastCache(chromecastQueryTimeout)
 		})
 	}
+
+	return getChromecastDevicesSnapshot()
+}
+
+func getChromecastDevicesSnapshot() []Device {
 
 	ccMu.Lock()
 	defer ccMu.Unlock()
