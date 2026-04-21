@@ -9,10 +9,7 @@ import (
 func TestBuildCLICommandUsesSecondBasedListenTimeout(t *testing.T) {
 	t.Parallel()
 
-	args, err := BuildCLICommand("streamkey", "1935", "/tmp/go2tv-rtmp-test")
-	if err != nil {
-		t.Fatalf("BuildCLICommand() error = %v", err)
-	}
+	args := BuildCLICommand("streamkey", "1935", "/tmp/go2tv-rtmp-test")
 
 	timeout, ok := flagValue(args, "-timeout")
 	if !ok {

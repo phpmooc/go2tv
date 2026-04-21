@@ -144,8 +144,8 @@ func (t *tappedSlider) Dragged(e *fyne.DragEvent) {
 
 	if duration, ok := t.chromecastSeekDuration(); ok {
 		cur := (duration * t.Slider.Value) / t.Slider.Max
-		reltime, _ := utils.SecondsToClockTime(int(cur))
-		total, _ := utils.SecondsToClockTime(int(duration))
+		reltime := utils.SecondsToClockTime(int(cur))
+		total := utils.SecondsToClockTime(int(duration))
 		t.screen.CurrentPos.Set(reltime)
 		t.screen.EndPos.Set(total)
 		return
@@ -188,10 +188,7 @@ func (t *tappedSlider) Dragged(e *fyne.DragEvent) {
 	cur := (float64(total) * t.Slider.Value) / t.Slider.Max
 	roundedInt := int(math.Round(cur))
 
-	reltime, err := utils.SecondsToClockTime(roundedInt)
-	if err != nil {
-		return
-	}
+	reltime := utils.SecondsToClockTime(roundedInt)
 
 	end, err := utils.FormatClockTime(cachedEnd)
 	if err != nil {
@@ -251,8 +248,8 @@ func (t *tappedSlider) Tapped(p *fyne.PointEvent) {
 			seekPos := int((t.screen.SlideBar.Value / t.screen.SlideBar.Max) * duration)
 
 			// Update time labels immediately for visual feedback (like DLNA)
-			current, _ := utils.SecondsToClockTime(seekPos)
-			total, _ := utils.SecondsToClockTime(int(duration))
+			current := utils.SecondsToClockTime(seekPos)
+			total := utils.SecondsToClockTime(int(duration))
 			fyne.Do(func() {
 				t.screen.CurrentPos.Set(current)
 				t.screen.EndPos.Set(total)
@@ -303,10 +300,7 @@ func (t *tappedSlider) seekDLNAAsync() {
 		cur := (float64(total) * sliderValue) / sliderMax
 		roundedInt := int(math.Round(cur))
 
-		reltime, err := utils.SecondsToClockTime(roundedInt)
-		if err != nil {
-			return
-		}
+		reltime := utils.SecondsToClockTime(roundedInt)
 
 		end, err := utils.FormatClockTime(getPos[0])
 		if err != nil {
@@ -1111,10 +1105,7 @@ func sliderUpdate(s *FyneScreen) {
 					return
 				}
 
-				currentClock, err := utils.SecondsToClockTime(current)
-				if err != nil {
-					return
-				}
+				currentClock := utils.SecondsToClockTime(current)
 
 				fyne.Do(func() {
 					s.CurrentPos.Set(currentClock)

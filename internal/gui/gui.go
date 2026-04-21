@@ -469,16 +469,8 @@ func isTraversalBoundaryError(err error) bool {
 		errors.Is(err, errNoPreviousQueueMedia)
 }
 
-func getNextMediaOrError(screen *FyneScreen) (string, string, error) {
-	return getAdjacentMedia(screen, 1)
-}
-
 func getNextAutoPlayMediaOrError(screen *FyneScreen) (string, string, error) {
 	return getAdjacentQueuedMedia(screen, 1, true)
-}
-
-func getPreviousMediaOrError(screen *FyneScreen) (string, string, error) {
-	return getAdjacentMedia(screen, -1)
 }
 
 func autoSelectNextSubs(v string, screen *FyneScreen) {
@@ -829,10 +821,6 @@ func onDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
 	return func(p fyne.Position, u []fyne.URI) {
 		handleDroppedFiles(screen, droppedMediaModeReplace, u)
 	}
-}
-
-func (screen *FyneScreen) droppedMediaBlockedError() error {
-	return screen.droppedMediaBlockedErrorForMode(droppedMediaModeReplace)
 }
 
 func handleDroppedFiles(screen *FyneScreen, mode droppedMediaMode, uris []fyne.URI) {

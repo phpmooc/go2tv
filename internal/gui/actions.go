@@ -1582,8 +1582,8 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 				fyne.Do(func() {
 					screen.SlideBar.SetValue(progress)
 					// Update time labels
-					current, _ := utils.SecondsToClockTime(int(currentTime))
-					total, _ := utils.SecondsToClockTime(int(duration))
+					current := utils.SecondsToClockTime(int(currentTime))
+					total := utils.SecondsToClockTime(int(duration))
 					screen.CurrentPos.Set(current)
 					screen.EndPos.Set(total)
 				})

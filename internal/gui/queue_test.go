@@ -39,9 +39,9 @@ func TestGetAdjacentQueuedMediaSameTypeOnly(t *testing.T) {
 		{Path: videoTwo, BaseName: filepath.Base(videoTwo), ParentFolder: dir, MediaType: "video"},
 	}, 0)
 
-	name, path, err := getNextMediaOrError(screen)
+	name, path, err := getAdjacentMedia(screen, 1)
 	if err != nil {
-		t.Fatalf("getNextMediaOrError failed: %v", err)
+		t.Fatalf("getAdjacentMedia failed: %v", err)
 	}
 	if name != filepath.Base(videoTwo) {
 		t.Fatalf("unexpected next name: got %q want %q", name, filepath.Base(videoTwo))
@@ -62,7 +62,7 @@ func TestGetAdjacentQueuedMediaStopsAtEnd(t *testing.T) {
 		{Path: videoTwo, BaseName: filepath.Base(videoTwo), ParentFolder: dir, MediaType: "video"},
 	}, 1)
 
-	_, _, err := getNextMediaOrError(screen)
+	_, _, err := getAdjacentMedia(screen, 1)
 	if !errors.Is(err, errNoNextQueueMedia) {
 		t.Fatalf("expected errNoNextQueueMedia, got %v", err)
 	}
@@ -138,7 +138,7 @@ func TestGetNextAutoPlayMediaStopsWithoutWrapCandidate(t *testing.T) {
 func TestGetAdjacentQueuedMediaRequiresQueue(t *testing.T) {
 	screen := newTraversalTestScreen(t, "/tmp/test.mp4")
 
-	_, _, err := getNextMediaOrError(screen)
+	_, _, err := getAdjacentMedia(screen, 1)
 	if err == nil {
 		t.Fatalf("expected error without queue")
 	}
@@ -158,9 +158,9 @@ func TestGetPreviousQueuedMediaSameTypeOnly(t *testing.T) {
 		{Path: videoTwo, BaseName: filepath.Base(videoTwo), ParentFolder: dir, MediaType: "video"},
 	}, 2)
 
-	name, path, err := getPreviousMediaOrError(screen)
+	name, path, err := getAdjacentMedia(screen, -1)
 	if err != nil {
-		t.Fatalf("getPreviousMediaOrError failed: %v", err)
+		t.Fatalf("getAdjacentMedia failed: %v", err)
 	}
 	if name != filepath.Base(videoOne) {
 		t.Fatalf("unexpected previous name: got %q want %q", name, filepath.Base(videoOne))
@@ -320,37 +320,6 @@ func TestActiveQueueIndexRequiresCurrentMedia(t *testing.T) {
 	screen.mediafile = "/tmp/two.mp4"
 	if got := screen.activeQueueIndex(queue); got != 1 {
 		t.Fatalf("expected active queue index 1, got %d", got)
-	}
-}
-
-func TestDroppedMediaBlockedError(t *testing.T) {
-	app := test.NewApp()
-	defer app.Quit()
-
-	screen := &FyneScreen{
-		ExternalMediaURL: widget.NewCheck("", nil),
-		rtmpServerCheck:  widget.NewCheck("", nil),
-	}
-
-	if err := screen.droppedMediaBlockedError(); err != nil {
-		t.Fatalf("unexpected drop block without live mode: %v", err)
-	}
-
-	screen.ExternalMediaURL.SetChecked(true)
-	if err := screen.droppedMediaBlockedError(); err != nil {
-		t.Fatalf("external URL mode should allow dropping files, got %v", err)
-	}
-
-	screen.ExternalMediaURL.SetChecked(false)
-	screen.rtmpServerCheck.SetChecked(true)
-	if err := screen.droppedMediaBlockedError(); err == nil {
-		t.Fatalf("expected drop block while RTMP mode is active")
-	}
-
-	screen.rtmpServerCheck.SetChecked(false)
-	screen.Screencast = true
-	if err := screen.droppedMediaBlockedError(); err == nil {
-		t.Fatalf("expected drop block while screencast mode is active")
 	}
 }
 

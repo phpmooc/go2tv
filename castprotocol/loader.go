@@ -1,7 +1,6 @@
 package castprotocol
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync/atomic"
 
@@ -156,13 +155,3 @@ func LaunchDefaultReceiver(conn cast.Conn) error {
 
 // CastNamespaceReceiver is the namespace for receiver control messages
 const CastNamespaceReceiver = "urn:x-cast:com.google.cast.receiver"
-
-// MarshalJSON for custom JSON output
-func (m *MediaItemWithTracks) MarshalJSON() ([]byte, error) {
-	type Alias MediaItemWithTracks
-	return json.Marshal(&struct {
-		*Alias
-	}{
-		Alias: (*Alias)(m),
-	})
-}

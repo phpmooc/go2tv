@@ -156,10 +156,7 @@ func TestSecondsToClockTime(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
-			out, err := SecondsToClockTime(tc.input)
-			if err != nil {
-				t.Fatalf("%s: got: %s, want: %s.", tc.name, out, tc.want)
-			}
+			out := SecondsToClockTime(tc.input)
 
 			if out != tc.want {
 				t.Fatalf("%s: got: %s, want: %s.", tc.name, out, tc.want)

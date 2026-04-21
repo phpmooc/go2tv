@@ -98,12 +98,6 @@ func (s *HTTPserver) GetAddr() string {
 	return s.http.Addr
 }
 
-// StartSimpleServer starts a minimal HTTP server for serving media files.
-// Used by Chromecast which doesn't need DLNA callback handlers or TVPayload.
-func (s *HTTPserver) StartSimpleServer(serverStarted chan<- error, mediaPath string) {
-	s.StartSimpleServerWithTranscode(serverStarted, mediaPath, nil)
-}
-
 // StartSimpleServerWithTranscode starts HTTP server with optional transcoding.
 // Used by Chromecast when media needs transcoding.
 // Pass tcOpts=nil for direct streaming (no transcoding).

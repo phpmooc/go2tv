@@ -344,21 +344,6 @@ func healthCheckChromecastDevices(ctx context.Context) {
 	}
 }
 
-// GetChromecastDevices returns the current cached Chromecast devices.
-// Returns a slice of Device structs with type set to DeviceTypeChromecast.
-func GetChromecastDevices() []Device {
-	ccMu.Lock()
-	cacheEmpty := len(chromeCastDevices) == 0
-	ccMu.Unlock()
-	if cacheEmpty {
-		ccWarmupOnce.Do(func() {
-			warmupChromecastCache(chromecastQueryTimeout)
-		})
-	}
-
-	return getChromecastDevicesSnapshot()
-}
-
 func getChromecastDevicesSnapshot() []Device {
 
 	ccMu.Lock()

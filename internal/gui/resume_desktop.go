@@ -510,10 +510,7 @@ func (s *FyneScreen) applyInitialDLNAResume(tvdata *soapcalls.TVPayload, seconds
 	}
 
 	go func() {
-		reltime, err := utils.SecondsToClockTime(seconds)
-		if err != nil {
-			return
-		}
+		reltime := utils.SecondsToClockTime(seconds)
 
 		for attempt := range dlnaResumeRetryAttempts {
 			if shouldAttemptInitialDLNASeek(tvdata) {

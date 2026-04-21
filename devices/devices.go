@@ -37,11 +37,7 @@ type deviceEntry struct {
 	addr string
 }
 
-var (
-	ErrNoDeviceAvailable  = errors.New("loadSSDPservices: No available Media Renderers")
-	ErrDeviceNotAvailable = errors.New("devicePicker: Requested device not available")
-	ErrSomethingWentWrong = errors.New("devicePicker: Something went terribly wrong")
-)
+var ErrNoDeviceAvailable = errors.New("loadSSDPservices: No available Media Renderers")
 
 var (
 	ssdpSearch              = ssdp.Search
@@ -411,19 +407,6 @@ func sortDevices(devices []Device) {
 		// Within same type, sort alphabetically by name
 		return devices[i].Name < devices[j].Name
 	})
-}
-
-// DevicePicker will pick the nth device from the devices input slice.
-func DevicePicker(devices []Device, n int) (string, error) {
-	if n > len(devices) || len(devices) == 0 || n <= 0 {
-		return "", ErrDeviceNotAvailable
-	}
-
-	if n > len(devices) {
-		return "", ErrDeviceNotAvailable
-	}
-
-	return devices[n-1].Addr, nil
 }
 
 func checkInterfacesForPort(port int) error {
