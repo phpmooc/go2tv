@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"maps"
 	"net"
 	"strings"
 	"sync"
@@ -187,9 +188,7 @@ func TestLoadAllDevicesReturnsCachedResults(t *testing.T) {
 	origDLNA := append([]Device(nil), dlnaDevices...)
 	ccMu.Lock()
 	origChromecast := make(map[string]castDevice, len(chromeCastDevices))
-	for addr, device := range chromeCastDevices {
-		origChromecast[addr] = device
-	}
+	maps.Copy(origChromecast, chromeCastDevices)
 	ccMu.Unlock()
 	t.Cleanup(func() {
 		setDLNADevices(origDLNA)

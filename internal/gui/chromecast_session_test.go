@@ -42,7 +42,7 @@ func reflectValueElem(t *testing.T, value any) reflect.Value {
 	t.Helper()
 
 	v := reflect.ValueOf(value)
-	if v.Kind() != reflect.Ptr || v.IsNil() {
+	if v.Kind() != reflect.Pointer || v.IsNil() {
 		t.Fatal("expected non-nil pointer")
 	}
 	return v.Elem()

@@ -199,32 +199,47 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 		}
 	}
 
-	var allDevices []deviceEntry
+	var (
+		allDevices []deviceEntry
+		resultsMu  sync.Mutex
+		wg         sync.WaitGroup
+		sem        = make(chan struct{}, 10)
+	)
 
 	for loc := range locations {
-		locCtx, cancel := context.WithTimeout(context.Background(), dlnaLocationTimeout)
-		devices, err := loadDevicesFromLocation(locCtx, loc)
-		cancel()
-		if err != nil {
-			loadErrors++
-			loadErrorHosts = append(loadErrorHosts, locationHost(loc))
-			continue
-		}
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
 
-		for _, dev := range devices {
-			if !isDLNADeviceCastable(dev) {
-				filteredDevices++
-				continue
+			locCtx, cancel := context.WithTimeout(context.Background(), dlnaLocationTimeout)
+			devices, err := loadDevicesFromLocation(locCtx, loc)
+			cancel()
+
+			resultsMu.Lock()
+			defer resultsMu.Unlock()
+
+			if err != nil {
+				loadErrors++
+				loadErrorHosts = append(loadErrorHosts, locationHost(loc))
+				return
 			}
 
-			name := dev.FriendlyName
-			if name == "" {
-				name = "Unknown Device"
-				unnamedDevices++
+			for _, dev := range devices {
+				if !isDLNADeviceCastable(dev) {
+					filteredDevices++
+					continue
+				}
+
+				name := dev.FriendlyName
+				if name == "" {
+					name = "Unknown Device"
+					unnamedDevices++
+				}
+				allDevices = append(allDevices, deviceEntry{name: name, addr: loc})
 			}
-			allDevices = append(allDevices, deviceEntry{name: name, addr: loc})
-		}
+		})
 	}
+	wg.Wait()
 
 	// Handle duplicate names
 	deviceList := make(map[string]string)
@@ -309,8 +324,11 @@ func StartDiscovery(ctx context.Context) {
 
 func startDLNADiscoveryLoop(ctx context.Context) {
 	go func() {
-		pollTimer := time.NewTimer(0)
+		pollTimer := time.NewTimer(dlnaDiscoveryPause)
 		defer pollTimer.Stop()
+
+		// Initial immediate discovery before the first timer tick
+		refreshDLNADevices(1)
 
 		for {
 			select {
@@ -319,14 +337,14 @@ func startDLNADiscoveryLoop(ctx context.Context) {
 			case <-pollTimer.C:
 			}
 
-			refreshDLNADevices()
+			refreshDLNADevices(dlnaDiscoveryDelay)
 			pollTimer.Reset(dlnaDiscoveryPause)
 		}
 	}()
 }
 
-func refreshDLNADevices() {
-	devices, err := LoadSSDPservices(dlnaDiscoveryDelay)
+func refreshDLNADevices(delay int) {
+	devices, err := LoadSSDPservices(delay)
 	if err != nil {
 		if stderrors.Is(err, ErrNoDeviceAvailable) {
 			setDLNADevices(nil)
