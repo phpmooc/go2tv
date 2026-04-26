@@ -201,7 +201,7 @@ func setPlayPauseView(s string, screen *FyneScreen) {
 		if isImage {
 			screen.PlayPause.Disable()
 			screen.PlayPause.SetIcon(theme.FileImageIcon())
-			screen.PlayPause.SetText("Image Casting")
+			screen.PlayPause.SetText("Image")
 		} else {
 			screen.PlayPause.Enable()
 			switch s {
