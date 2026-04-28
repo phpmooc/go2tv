@@ -702,7 +702,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 
 	var mediaURL string
 	var mediaType string
-	var serverStoppedCTX context.Context
+	serverStoppedCTX := context.Background()
 
 	if screen.ExternalMediaURL.Checked {
 		mediaURL = screen.MediaText.Text

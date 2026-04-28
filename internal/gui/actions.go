@@ -1134,7 +1134,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 
 	var mediaURL string
 	var mediaType string
-	var serverStoppedCTX context.Context
+	serverStoppedCTX := context.Background()
 
 	if screen.ExternalMediaURL.Checked {
 		mediaURL = screen.MediaText.Text
@@ -1806,7 +1806,7 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			// Determine if transcoding is enabled
 			transcode := screen.Transcode
 			ffmpegSeek := 0
-			var serverStoppedCTX context.Context
+			serverStoppedCTX := context.Background()
 
 			// Chromecast handles images and audio natively - never transcode these
 			mediaTypeSlice := strings.Split(mediaType, "/")
@@ -1917,7 +1917,6 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 
 			// Set state to Waiting to ensure status watcher triggers UI update when playing starts
 			screen.updateScreenState("Waiting")
-			serverStoppedCTX = normalizeChromecastWatcherContext(serverStoppedCTX)
 
 			if client == nil || !client.IsConnected() {
 				return

@@ -637,14 +637,6 @@ func (p *FyneScreen) isChromecastActionCurrent(actionID uint64) bool {
 	return p.chromecastActionID == actionID
 }
 
-func normalizeChromecastWatcherContext(ctx context.Context) context.Context {
-	if ctx != nil {
-		return ctx
-	}
-
-	return context.Background()
-}
-
 func chromecastDeviceHost(device devType) string {
 	if device.deviceType != devices.DeviceTypeChromecast || device.addr == "" {
 		return ""

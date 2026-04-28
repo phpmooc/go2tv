@@ -11,18 +11,6 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func TestNormalizeChromecastWatcherContextUsesBackground(t *testing.T) {
-	if normalizeChromecastWatcherContext(nil) == nil {
-		t.Fatal("expected fallback context")
-	}
-
-	ctx := t.Context()
-
-	if got := normalizeChromecastWatcherContext(ctx); got != ctx {
-		t.Fatal("expected existing context to be preserved")
-	}
-}
-
 func TestNextChromecastActionIDAdvancesGeneration(t *testing.T) {
 	screen := &FyneScreen{chromecastActionID: 21}
 
