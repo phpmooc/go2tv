@@ -26,6 +26,7 @@ import (
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
 	"go2tv.app/go2tv/v2/internal/crashlog"
+	"go2tv.app/go2tv/v2/internal/devicecolors"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
 )
@@ -466,16 +467,17 @@ func (m listDevicesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 var (
-	chromecastTag = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#1A73E8")).
-			Background(lipgloss.Color("#E8F0FE")).
-			Bold(true)
-
-	dlnaTag = lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6F42C1")).
-		Background(lipgloss.Color("#F3E8FF")).
-		Bold(true)
+	chromecastTag = deviceTagStyle(devices.DeviceTypeChromecast)
+	dlnaTag       = deviceTagStyle(devices.DeviceTypeDLNA)
 )
+
+func deviceTagStyle(deviceType string) lipgloss.Style {
+	palette := devicecolors.DarkPalette(deviceType)
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(devicecolors.Hex(palette.Text))).
+		Background(lipgloss.Color(devicecolors.Hex(palette.Fill))).
+		Bold(true)
+}
 
 func typeTag(t string) string {
 	switch strings.ToLower(t) {

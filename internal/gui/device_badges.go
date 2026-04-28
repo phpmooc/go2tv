@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
 	"go2tv.app/go2tv/v2/devices"
+	"go2tv.app/go2tv/v2/internal/devicecolors"
 )
 
 type badgePalette struct {
@@ -189,63 +190,25 @@ func (r *deviceRowRenderer) Refresh() {
 
 func deviceBadgePalette(deviceType string) badgePalette {
 	if currentThemeVariant() == theme.VariantLight {
-		switch deviceType {
-		case devices.DeviceTypeChromecast:
-			return badgePalette{
-				fill:   color.NRGBA{R: 0xda, G: 0xee, B: 0xe7, A: 0xff},
-				stroke: color.NRGBA{R: 0xda, G: 0xee, B: 0xe7, A: 0xff},
-				text:   color.NRGBA{R: 0x34, G: 0x6d, B: 0x5f, A: 0xff},
-			}
-		case devices.DeviceTypeDLNA:
-			return badgePalette{
-				fill:   color.NRGBA{R: 0xe2, G: 0xe8, B: 0xfa, A: 0xff},
-				stroke: color.NRGBA{R: 0xe2, G: 0xe8, B: 0xfa, A: 0xff},
-				text:   color.NRGBA{R: 0x46, G: 0x5d, B: 0x96, A: 0xff},
-			}
-		default:
-			return badgePalette{
-				fill:   color.NRGBA{R: 0xea, G: 0xea, B: 0xea, A: 0xff},
-				stroke: color.NRGBA{R: 0xea, G: 0xea, B: 0xea, A: 0xff},
-				text:   color.NRGBA{R: 0x5f, G: 0x5f, B: 0x5f, A: 0xff},
-			}
-		}
+		return badgePaletteFromDeviceColors(devicecolors.LightPalette(deviceType))
 	}
 
-	switch deviceType {
-	case devices.DeviceTypeChromecast:
-		return badgePalette{
-			fill:   color.NRGBA{R: 0x36, G: 0x47, B: 0x42, A: 0xff},
-			stroke: color.NRGBA{R: 0x36, G: 0x47, B: 0x42, A: 0xff},
-			text:   color.NRGBA{R: 0xbd, G: 0xd4, B: 0xcb, A: 0xff},
-		}
-	case devices.DeviceTypeDLNA:
-		return badgePalette{
-			fill:   color.NRGBA{R: 0x3a, G: 0x40, B: 0x52, A: 0xff},
-			stroke: color.NRGBA{R: 0x3a, G: 0x40, B: 0x52, A: 0xff},
-			text:   color.NRGBA{R: 0xc3, G: 0xcd, B: 0xe8, A: 0xff},
-		}
-	default:
-		return badgePalette{
-			fill:   color.NRGBA{R: 0x3a, G: 0x3a, B: 0x3a, A: 0xff},
-			stroke: color.NRGBA{R: 0x3a, G: 0x3a, B: 0x3a, A: 0xff},
-			text:   color.NRGBA{R: 0xbe, G: 0xbe, B: 0xbe, A: 0xff},
-		}
-	}
+	return badgePaletteFromDeviceColors(devicecolors.DarkPalette(deviceType))
 }
 
 func audioOnlyBadgePalette() badgePalette {
 	if currentThemeVariant() == theme.VariantLight {
-		return badgePalette{
-			fill:   color.NRGBA{R: 0xf6, G: 0xea, B: 0xd6, A: 0xff},
-			stroke: color.NRGBA{R: 0xf6, G: 0xea, B: 0xd6, A: 0xff},
-			text:   color.NRGBA{R: 0x83, G: 0x64, B: 0x2f, A: 0xff},
-		}
+		return badgePaletteFromDeviceColors(devicecolors.AudioOnlyLightPalette())
 	}
 
+	return badgePaletteFromDeviceColors(devicecolors.AudioOnlyDarkPalette())
+}
+
+func badgePaletteFromDeviceColors(p devicecolors.Palette) badgePalette {
 	return badgePalette{
-		fill:   color.NRGBA{R: 0x48, G: 0x3c, B: 0x2d, A: 0xff},
-		stroke: color.NRGBA{R: 0x48, G: 0x3c, B: 0x2d, A: 0xff},
-		text:   color.NRGBA{R: 0xe1, G: 0xc0, B: 0x92, A: 0xff},
+		fill:   p.Fill,
+		stroke: p.Stroke,
+		text:   p.Text,
 	}
 }
 
