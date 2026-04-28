@@ -5,9 +5,10 @@ go 1.25.0
 require (
 	fyne.io/fyne/v2 v2.7.3
 	github.com/alexballas/go-ssdp v0.0.3
-	github.com/alexballas/xfilepicker v0.0.0-20260325155423-826412aa6467
+	github.com/alexballas/xfilepicker v0.0.0-20260427220638-78f6865a771e
 	github.com/buger/jsonparser v1.1.2
 	github.com/charmbracelet/bubbletea v1.3.10
+	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/dweymouth/fyne-tooltip v0.4.0
 	github.com/gdamore/tcell/v2 v2.13.9
 	github.com/go-viper/mapstructure/v2 v2.5.0
@@ -35,7 +36,6 @@ require (
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
-	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
 	github.com/charmbracelet/x/cellbuf v0.0.15 // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
@@ -62,7 +62,7 @@ require (
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-isatty v0.0.21 // indirect
+	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect

@@ -10,6 +10,8 @@ github.com/alexballas/go-ssdp v0.0.3 h1:wTtHib45NtrkYZ/saCaB/2qJ9ci6EWeQFl6imaW4
 github.com/alexballas/go-ssdp v0.0.3/go.mod h1:jUwvJl32BZxBQiRbW5Q0h1QrDGMuA+HRg5qTQvIquJE=
 github.com/alexballas/xfilepicker v0.0.0-20260325155423-826412aa6467 h1:+knDVmnYONYbmoEZ2yv+gDP0QdJqAKt7oPJYe+RAqHs=
 github.com/alexballas/xfilepicker v0.0.0-20260325155423-826412aa6467/go.mod h1:3iVlb7BjvPrChA4y5VhJ4+C7rW08csLbAQCMp45kU/M=
+github.com/alexballas/xfilepicker v0.0.0-20260427220638-78f6865a771e h1:8ZETclk6/Zb/Y6tCZIMjMk46XawgJgWLz697SPjH19o=
+github.com/alexballas/xfilepicker v0.0.0-20260427220638-78f6865a771e/go.mod h1:3iVlb7BjvPrChA4y5VhJ4+C7rW08csLbAQCMp45kU/M=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/buger/jsonparser v1.1.2 h1:frqHqw7otoVbk5M8LlE/L7HTnIq2v9RX6EJ48i9AxJk=
@@ -105,6 +107,8 @@ github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHP
 github.com/mattn/go-colorable v0.1.14/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=
 github.com/mattn/go-isatty v0.0.21 h1:xYae+lCNBP7QuW4PUnNG61ffM4hVIfm+zUzDuSzYLGs=
 github.com/mattn/go-isatty v0.0.21/go.mod h1:ZXfXG4SQHsB/w3ZeOYbR0PrPwLy+n6xiMrJlRFqopa4=
+github.com/mattn/go-isatty v0.0.22 h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4=
+github.com/mattn/go-isatty v0.0.22/go.mod h1:ZXfXG4SQHsB/w3ZeOYbR0PrPwLy+n6xiMrJlRFqopa4=
 github.com/mattn/go-localereader v0.0.1 h1:ygSAOl7ZXTx4RdPYinUpg6W99U8jWvWi9Ye2JC/oIi4=
 github.com/mattn/go-localereader v0.0.1/go.mod h1:8fBrzywKY7BI3czFoHkuzRoWE9C+EiG4R1k4Cjx5p88=
 github.com/mattn/go-runewidth v0.0.23 h1:7ykA0T0jkPpzSvMS5i9uoNn2Xy3R383f9HDx3RybWcw=

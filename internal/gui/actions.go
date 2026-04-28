@@ -410,9 +410,11 @@ func openMediaPickerForWindow(screen *FyneScreen, w fyne.Window, onPaths func(*F
 	if screen.currentmfolder != "" {
 		mfileURI := storage.NewFileURI(screen.currentmfolder)
 		mfileLister, err := storage.ListerForURI(mfileURI)
-		check(screen, err)
 
-		if f, ok := fd.(xfilepicker.FilePicker); ok {
+		if err != nil || mfileLister == nil {
+			check(screen, err)
+			screen.currentmfolder = ""
+		} else if f, ok := fd.(xfilepicker.FilePicker); ok {
 			f.SetLocation(mfileLister)
 		}
 	}
@@ -508,15 +510,12 @@ func subsAction(screen *FyneScreen) {
 	if screen.currentmfolder != "" {
 		mfileURI := storage.NewFileURI(screen.currentmfolder)
 		mfileLister, err := storage.ListerForURI(mfileURI)
-		check(screen, err)
-		if err != nil {
-			return
-		}
-
-		if f, ok := fd.(xfilepicker.FilePicker); ok {
+		if err != nil || mfileLister == nil {
+			check(screen, err)
+			screen.currentmfolder = ""
+		} else if f, ok := fd.(xfilepicker.FilePicker); ok {
 			f.SetLocation(mfileLister)
 		}
-
 	}
 	resumeHotkeys = suspendHotkeys(screen)
 	fd.Show()

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"errors"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
@@ -366,6 +369,7 @@ func runChromecastCLI(ctx context.Context, cancel context.CancelFunc, deviceURL,
 type Device struct {
 	Model string
 	URL   string
+	Type  string
 }
 
 type refreshMsg []Device
@@ -374,18 +378,45 @@ type listDevicesModel struct {
 	devices []Device
 }
 
+var previousList []Device
+
 func checkDevices() tea.Cmd {
 	return func() tea.Msg {
 		deviceList, _ := devices.LoadAllDevices()
 
 		var rMsg refreshMsg
+
+	outer:
+		for _, old := range previousList {
+			oldAddress, _ := url.Parse(old.URL)
+			for _, dev := range deviceList {
+				if dev.Addr == old.URL {
+					continue outer
+				}
+			}
+
+			if utils.HostPortIsAlive(oldAddress.Host) {
+				rMsg = append(rMsg, old)
+			}
+
+		}
+
 		for _, dev := range deviceList {
 			rMsg = append(rMsg, Device{
 				Model: dev.Name,
 				URL:   dev.Addr,
+				Type:  dev.Type,
 			})
 		}
 
+		slices.SortFunc(rMsg, func(a, b Device) int {
+			if a.Type != b.Type {
+				return cmp.Compare(a.Type, b.Type)
+			}
+			return strings.Compare(a.Model, b.Model)
+		})
+
+		previousList = rMsg
 		return rMsg
 	}
 }
@@ -412,15 +443,37 @@ func (m listDevicesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+var (
+	chromecastTag = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#1A73E8")).
+			Background(lipgloss.Color("#E8F0FE")).
+			Bold(true)
+
+	dlnaTag = lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6F42C1")).
+		Background(lipgloss.Color("#F3E8FF")).
+		Bold(true)
+)
+
+func typeTag(t string) string {
+	switch strings.ToLower(t) {
+	case "chromecast":
+		return chromecastTag.Render("Chromecast")
+	case "dlna":
+		return dlnaTag.Render("DLNA")
+	default:
+		return t
+	}
+}
+
 func (m listDevicesModel) View() string {
 	var s strings.Builder
 	s.WriteString("Scanning devices... (q to quit)\n\n")
 	for _, dev := range m.devices {
-		s.WriteString("• " + dev.Model + " [" + dev.URL + "]\n")
+		s.WriteString("• " + dev.Model + " " + typeTag(dev.Type) + " [" + dev.URL + "]\n")
 	}
 	return s.String()
 }
-
 func listFlagFunction() error {
 	flagsEnabled := 0
 	flag.Visit(func(*flag.Flag) {
