@@ -206,18 +206,13 @@ If you want tool-driven casting from MCP-compatible workflows, use mcp-beam.
 
 ## Notes
 
+**Chromecast receiver**
+
+Go2TV uses a custom Chromecast receiver hosted at https://cast-receiver.go2tv.app/. It is not part of this open-source repository and is not currently published. Functionality matches the default receiver, with minor branding differences.
+
 **Firewall Configuration**
 
 Go2TV uses ports 3339-3438 for device discovery. If you're behind a firewall, allow inbound UDP traffic on these ports.
-
-**macOS Security**
-
-If you see "cannot be opened because the developer cannot be verified":
-1. Control-click the app, then choose Open from the menu
-2. Click Open
-
-If you see "go2tv is damaged and can't be opened":
-- Run: `xattr -cr /path/to/go2tv.app`
 
 ---
 
