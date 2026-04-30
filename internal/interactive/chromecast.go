@@ -106,7 +106,7 @@ func (p *ChromecastScreen) InterInit(mediaPath string, c chan error) {
 	p.EmitMsg(p.getLastAction())
 
 	// Status polling goroutine
-	statusTicker := time.NewTicker(1 * time.Second)
+	statusTicker := time.NewTicker(time.Second)
 	var mediaStarted bool
 	go func() {
 		for range statusTicker.C {
@@ -212,11 +212,6 @@ func (p *ChromecastScreen) HandleKeyEvent(ev *tcell.EventKey) {
 func (p *ChromecastScreen) Fini() {
 	p.Current.Fini()
 	p.exitCTXfunc()
-}
-
-// SetMediaType Method to implement the screen interface
-func (p *ChromecastScreen) SetMediaType(mediaType string) {
-	// No-op for interactive mode
 }
 
 // InitChromecastScreen creates a new Chromecast interactive screen.

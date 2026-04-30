@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestSelectTranscodeVideoEncoderFallsBackToSoftware(t *testing.T) {
+func TestSelectTranscodeEncoderFallsBackToSoftware(t *testing.T) {
 	plan := selectTranscodeVideoEncoder("/path/does/not/exist/ffmpeg", videoEncoderProfileChromecastFile)
 	if plan.codec != "libx264" {
 		t.Fatalf("expected libx264 fallback, got %q", plan.codec)
@@ -17,7 +17,7 @@ func TestSelectTranscodeVideoEncoderFallsBackToSoftware(t *testing.T) {
 	}
 }
 
-func TestSelectTranscodeVideoEncoderUsesWorkingHardware(t *testing.T) {
+func TestSelectTranscodeEncoderUsesHardware(t *testing.T) {
 	candidates := transcodeHardwareEncoderCandidates(videoEncoderProfileChromecastFile)
 	if len(candidates) == 0 {
 		t.Skip("no hardware encoder candidates for this platform")
@@ -36,7 +36,7 @@ func TestSelectTranscodeVideoEncoderUsesWorkingHardware(t *testing.T) {
 	}
 }
 
-func TestSelectTranscodeVideoEncoderFallsBackWhenProbesFail(t *testing.T) {
+func TestSelectTranscodeEncoderFallsBackOnProbeFailure(t *testing.T) {
 	ffmpegPath := writeFakeTranscodeFFmpeg(t)
 	t.Setenv("FAKE_SUPPORTED_CODEC", "")
 

@@ -143,7 +143,7 @@ func TestSetVolumeSoapCallMPostFallbackOn405(t *testing.T) {
 	}
 }
 
-func TestSetAVTransportSoapCallRetriesWithLegacyMetadataOnFault(t *testing.T) {
+func TestSetAVTransportSoapRetriesWithLegacyMetadata(t *testing.T) {
 	var (
 		mu       sync.Mutex
 		requests []string
@@ -202,6 +202,110 @@ func TestSetAVTransportSoapCallRetriesWithLegacyMetadataOnFault(t *testing.T) {
 
 	if !seenCompat {
 		t.Fatalf("did not observe compatibility DIDL metadata in requests: %#v", requests)
+	}
+}
+
+func TestSetAVTransportSoapRetriesOnTransitionNotAvailable(t *testing.T) {
+	type requestCapture struct {
+		action string
+		body   string
+	}
+
+	var (
+		mu       sync.Mutex
+		requests []requestCapture
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		bodyStr := string(body)
+		action := r.Header.Get("SOAPAction")
+
+		mu.Lock()
+		requests = append(requests, requestCapture{action: action, body: bodyStr})
+		setCalls := 0
+		for _, req := range requests {
+			if strings.Contains(req.action, "SetAVTransportURI") {
+				setCalls++
+			}
+		}
+		mu.Unlock()
+
+		switch {
+		case strings.Contains(action, "SetAVTransportURI") && setCalls <= 2:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`<s:Fault><detail><UPnPError><errorCode>701</errorCode><errorDescription>Transition not available</errorDescription></UPnPError></detail></s:Fault>`))
+		case strings.Contains(action, "SetAVTransportURI"):
+			w.WriteHeader(http.StatusOK)
+		case strings.Contains(action, "Stop"):
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected SOAPAction: %q", action)
+		}
+	}))
+	defer srv.Close()
+
+	p := &TVPayload{
+		ControlURL: srv.URL,
+		MediaURL:   `http://192.168.88.250:3500/video.mp4`,
+		MediaType:  "video/mp4",
+		Seekable:   true,
+	}
+
+	if err := p.setAVTransportSoapCall(); err != nil {
+		t.Fatalf("setAVTransportSoapCall failed: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(requests) != 4 {
+		t.Fatalf("expected 4 SOAP requests, got %d: %#v", len(requests), requests)
+	}
+
+	if !strings.Contains(requests[0].action, "SetAVTransportURI") {
+		t.Fatalf("first request should be SetAVTransportURI, got %q", requests[0].action)
+	}
+
+	if !strings.Contains(requests[1].action, "SetAVTransportURI") {
+		t.Fatalf("second request should be compat SetAVTransportURI, got %q", requests[1].action)
+	}
+
+	if !strings.Contains(requests[2].action, "Stop") {
+		t.Fatalf("third request should be Stop, got %q", requests[2].action)
+	}
+
+	if !strings.Contains(requests[3].action, "SetAVTransportURI") {
+		t.Fatalf("fourth request should be retried SetAVTransportURI, got %q", requests[3].action)
+	}
+}
+
+func TestSeekSoapCallReturnsErrorOnFaultStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`<s:Fault><detail><UPnPError><errorCode>701</errorCode><errorDescription>Transition not available</errorDescription></UPnPError></detail></s:Fault>`))
+	}))
+	defer srv.Close()
+
+	p := &TVPayload{
+		ControlURL: srv.URL,
+	}
+
+	err := p.SeekSoapCall("00:10:00")
+	if err == nil {
+		t.Fatal("expected SeekSoapCall to fail on SOAP fault status")
+	}
+
+	if !strings.Contains(err.Error(), "701") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGetProtocolInfoSkipsWhenConnectionManagerMissing(t *testing.T) {
+	p := &TVPayload{}
+
+	if err := p.GetProtocolInfo(); err != nil {
+		t.Fatalf("GetProtocolInfo() err = %v, want nil", err)
 	}
 }
 

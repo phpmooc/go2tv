@@ -2,10 +2,14 @@ package devices
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/alexballas/go-ssdp"
@@ -16,6 +20,9 @@ import (
 const (
 	DeviceTypeDLNA       = "DLNA"
 	DeviceTypeChromecast = "Chromecast"
+	dlnaDiscoveryDelay   = 2
+	dlnaDiscoveryPause   = time.Second
+	dlnaLocationTimeout  = 1500 * time.Millisecond
 )
 
 type Device struct {
@@ -25,16 +32,114 @@ type Device struct {
 	IsAudioOnly bool
 }
 
-var (
-	ErrNoDeviceAvailable  = errors.New("loadSSDPservices: No available Media Renderers")
-	ErrDeviceNotAvailable = errors.New("devicePicker: Requested device not available")
-	ErrSomethingWentWrong = errors.New("devicePicker: Something went terribly wrong")
-)
+type deviceEntry struct {
+	name string
+	addr string
+}
+
+var ErrNoDeviceAvailable = errors.New("loadSSDPservices: No available Media Renderers")
 
 var (
 	ssdpSearch              = ssdp.Search
 	loadDevicesFromLocation = soapcalls.LoadDevicesFromLocation
+	interfaceAddrs          = net.Interfaces
+	ifaceAddrLookup         = func(iface net.Interface) ([]net.Addr, error) { return iface.Addrs() }
+	listenUDP               = net.ListenUDP
+	discoveryLogOutput      io.Writer
+	discoveryLogMu          sync.Mutex
+	discoverySummaryState   = make(map[string]summaryState)
+	dlnaDevices             []Device
+	dlnaMu                  sync.RWMutex
+	discoveryStartOnce      sync.Once
 )
+
+type summaryState struct {
+	lastLine string
+	repeats  int
+}
+
+// SetDiscoveryLogOutput enables lightweight discovery debug logs.
+func SetDiscoveryLogOutput(w io.Writer) {
+	discoveryLogMu.Lock()
+	discoveryLogOutput = w
+	clear(discoverySummaryState)
+	discoveryLogMu.Unlock()
+}
+
+func discoveryDebugf(format string, args ...any) {
+	discoveryLogMu.Lock()
+	defer discoveryLogMu.Unlock()
+
+	if discoveryLogOutput == nil {
+		return
+	}
+
+	_, _ = fmt.Fprintf(discoveryLogOutput, "discovery: "+format+"\n", args...)
+}
+
+func discoverySummaryf(key string, format string, args ...any) {
+	discoveryLogMu.Lock()
+	defer discoveryLogMu.Unlock()
+
+	if discoveryLogOutput == nil {
+		return
+	}
+
+	line := fmt.Sprintf(format, args...)
+	state := discoverySummaryState[key]
+	if state.lastLine == line {
+		state.repeats++
+		discoverySummaryState[key] = state
+		return
+	}
+
+	if state.repeats > 0 {
+		_, _ = fmt.Fprintf(discoveryLogOutput, "discovery: %s repeated=%d\n", key, state.repeats)
+	}
+
+	discoverySummaryState[key] = summaryState{lastLine: line}
+	_, _ = fmt.Fprintf(discoveryLogOutput, "discovery: %s\n", line)
+}
+
+func formatSummaryList(values []string, maxItems int) string {
+	if len(values) == 0 {
+		return ""
+	}
+
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	unique := sorted[:0]
+	for _, value := range sorted {
+		if len(unique) > 0 && unique[len(unique)-1] == value {
+			continue
+		}
+		unique = append(unique, value)
+	}
+
+	if maxItems <= 0 || len(unique) <= maxItems {
+		return strings.Join(unique, ",")
+	}
+
+	return fmt.Sprintf("%s,+%d more", strings.Join(unique[:maxItems], ","), len(unique)-maxItems)
+}
+
+func deviceNames(devices []Device, maxItems int) string {
+	names := make([]string, 0, len(devices))
+	for _, device := range devices {
+		names = append(names, device.Name)
+	}
+
+	return formatSummaryList(names, maxItems)
+}
+
+func locationHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+
+	return u.Host
+}
 
 // IsChromecastURL returns true if the URL points to a Chromecast device (port 8009).
 func IsChromecastURL(deviceURL string) bool {
@@ -52,6 +157,8 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	// We intentionally do not filter by ST value here because some vendors reply with
 	// non-AVTransport ST values while still exposing AVTransport in LOCATION XML.
 	locations := make(map[string]struct{})
+	var loadErrors, filteredDevices, unnamedDevices, dupNameCount int
+	loadErrorHosts := make([]string, 0)
 
 	port := 3339
 
@@ -82,6 +189,7 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 
 	list, err := ssdpSearch(ssdp.All, delay, addrString)
 	if err != nil {
+		discoveryDebugf("LoadSSDPservices search error: %v", err)
 		return nil, fmt.Errorf("LoadSSDPservices search error: %w", err)
 	}
 
@@ -91,31 +199,47 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 		}
 	}
 
-	// Extract all devices from each unique location
-	type deviceEntry struct {
-		name string
-		addr string
-	}
-	var allDevices []deviceEntry
+	var (
+		allDevices []deviceEntry
+		resultsMu  sync.Mutex
+		wg         sync.WaitGroup
+		sem        = make(chan struct{}, 10)
+	)
 
 	for loc := range locations {
-		devices, err := loadDevicesFromLocation(context.Background(), loc)
-		if err != nil {
-			continue
-		}
+		sem <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-sem }()
 
-		for _, dev := range devices {
-			if !isDLNADeviceCastable(dev) {
-				continue
+			locCtx, cancel := context.WithTimeout(context.Background(), dlnaLocationTimeout)
+			devices, err := loadDevicesFromLocation(locCtx, loc)
+			cancel()
+
+			resultsMu.Lock()
+			defer resultsMu.Unlock()
+
+			if err != nil {
+				loadErrors++
+				loadErrorHosts = append(loadErrorHosts, locationHost(loc))
+				return
 			}
 
-			name := dev.FriendlyName
-			if name == "" {
-				name = "Unknown Device"
+			for _, dev := range devices {
+				if !isDLNADeviceCastable(dev) {
+					filteredDevices++
+					continue
+				}
+
+				name := dev.FriendlyName
+				if name == "" {
+					name = "Unknown Device"
+					unnamedDevices++
+				}
+				allDevices = append(allDevices, deviceEntry{name: name, addr: loc})
 			}
-			allDevices = append(allDevices, deviceEntry{name: name, addr: loc})
-		}
+		})
 	}
+	wg.Wait()
 
 	// Handle duplicate names
 	deviceList := make(map[string]string)
@@ -133,6 +257,7 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 
 	for fn, c := range dupNames {
 		if c > 1 {
+			dupNameCount++
 			loc := deviceList[fn]
 			delete(deviceList, fn)
 			fn = fn + " (" + loc + ")"
@@ -141,6 +266,19 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 	}
 
 	if len(deviceList) == 0 {
+		discoverySummaryf(
+			"LoadSSDPservices summary",
+			"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d error_hosts=%q filtered=%d duplicate_names=%d unnamed=%d returned=0 devices=%q",
+			addrString,
+			len(list),
+			len(locations),
+			loadErrors,
+			formatSummaryList(loadErrorHosts, 3),
+			filteredDevices,
+			dupNameCount,
+			unnamedDevices,
+			"",
+		)
 		return nil, ErrNoDeviceAvailable
 	}
 
@@ -153,80 +291,127 @@ func LoadSSDPservices(delay int) ([]Device, error) {
 			Type: DeviceTypeDLNA,
 		})
 	}
+	discoverySummaryf(
+		"LoadSSDPservices summary",
+		"LoadSSDPservices summary listen_addr=%q ssdp_results=%d unique_locations=%d load_errors=%d error_hosts=%q filtered=%d duplicate_names=%d unnamed=%d returned=%d devices=%q",
+		addrString,
+		len(list),
+		len(locations),
+		loadErrors,
+		formatSummaryList(loadErrorHosts, 3),
+		filteredDevices,
+		dupNameCount,
+		unnamedDevices,
+		len(result),
+		deviceNames(result, 3),
+	)
 
 	return result, nil
 }
 
+// StartDiscovery starts the background discovery loops once for the process.
+func StartDiscovery(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	discoveryStartOnce.Do(func() {
+		discoveryDebugf("Discovery loops starting")
+		StartChromecastDiscoveryLoop(ctx)
+		startDLNADiscoveryLoop(ctx)
+	})
+}
+
+func startDLNADiscoveryLoop(ctx context.Context) {
+	go func() {
+		pollTimer := time.NewTimer(dlnaDiscoveryPause)
+		defer pollTimer.Stop()
+
+		// Initial immediate discovery before the first timer tick
+		refreshDLNADevices(1)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-pollTimer.C:
+			}
+
+			refreshDLNADevices(dlnaDiscoveryDelay)
+			pollTimer.Reset(dlnaDiscoveryPause)
+		}
+	}()
+}
+
+func refreshDLNADevices(delay int) {
+	devices, err := LoadSSDPservices(delay)
+	if err != nil {
+		if stderrors.Is(err, ErrNoDeviceAvailable) {
+			setDLNADevices(nil)
+			return
+		}
+
+		discoveryDebugf("DLNA discovery scan error: %v", err)
+		return
+	}
+
+	setDLNADevices(devices)
+}
+
+func setDLNADevices(devices []Device) {
+	dlnaMu.Lock()
+	dlnaDevices = append([]Device(nil), devices...)
+	dlnaMu.Unlock()
+}
+
+func getDLNADevices() []Device {
+	dlnaMu.RLock()
+	defer dlnaMu.RUnlock()
+
+	return append([]Device(nil), dlnaDevices...)
+}
 func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 	if dev == nil {
 		return false
 	}
 
-	// AVTransport drives playback. ConnectionManager is required by Play1 path
-	// because we call GetProtocolInfo before SetAVTransportURI.
-	return dev.AvtransportControlURL != "" && dev.ConnectionManagerURL != ""
+	return dev.AvtransportControlURL != ""
 }
 
-// LoadAllDevices returns a combined slice of DLNA and Chromecast devices.
-// It runs both discovery mechanisms concurrently and returns partial results
-// immediately without waiting for both to complete. This ensures delays in
-// one protocol don't block the other.
-func LoadAllDevices(delay int) ([]Device, error) {
-	type deviceResult struct {
-		devices []Device
-		err     error
+// LoadAllDevices returns the latest cached DLNA and Chromecast devices.
+func LoadAllDevices() ([]Device, error) {
+	dlna := getDLNADevices()
+	chromecast := getChromecastDevicesSnapshot()
+
+	combined := make([]Device, 0, len(dlna)+len(chromecast))
+	combined = append(combined, dlna...)
+	combined = append(combined, chromecast...)
+
+	if len(combined) == 0 {
+		discoverySummaryf(
+			"LoadAllDevices summary",
+			"LoadAllDevices summary cached=true dlna=%d dlna_names=%q chromecast=%d chromecast_names=%q combined=0",
+			len(dlna),
+			deviceNames(dlna, 3),
+			len(chromecast),
+			deviceNames(chromecast, 3),
+		)
+		return nil, ErrNoDeviceAvailable
 	}
 
-	dlnaChan := make(chan deviceResult, 1)
-	ccChan := make(chan deviceResult, 1)
+	sortDevices(combined)
+	discoverySummaryf(
+		"LoadAllDevices summary",
+		"LoadAllDevices summary cached=true dlna=%d dlna_names=%q chromecast=%d chromecast_names=%q combined=%d combined_names=%q",
+		len(dlna),
+		deviceNames(dlna, 3),
+		len(chromecast),
+		deviceNames(chromecast, 3),
+		len(combined),
+		deviceNames(combined, 4),
+	)
 
-	// Launch DLNA discovery in background
-	go func() {
-		devices, err := LoadSSDPservices(delay)
-		dlnaChan <- deviceResult{devices: devices, err: err}
-	}()
-
-	// Launch Chromecast discovery in background (instant, reads from cache)
-	go func() {
-		devices := GetChromecastDevices()
-		ccChan <- deviceResult{devices: devices, err: nil}
-	}()
-
-	// Collect results as they arrive, with timeout
-	combined := make([]Device, 0)
-	timeout := time.After(time.Duration(delay+1) * time.Second)
-	resultsReceived := 0
-
-	for resultsReceived < 2 {
-		select {
-		case result := <-dlnaChan:
-			if result.err == nil {
-				combined = append(combined, result.devices...)
-			}
-			resultsReceived++
-
-		case result := <-ccChan:
-			if result.devices != nil {
-				combined = append(combined, result.devices...)
-			}
-			resultsReceived++
-
-		case <-timeout:
-			// Return partial results if timeout occurs
-			if len(combined) > 0 {
-				sortDevices(combined)
-				return combined, nil
-			}
-			return nil, ErrNoDeviceAvailable
-		}
-	}
-
-	if len(combined) > 0 {
-		sortDevices(combined)
-		return combined, nil
-	}
-
-	return nil, ErrNoDeviceAvailable
+	return combined, nil
 }
 
 // sortDevices sorts devices by type (DLNA first, then Chromecast)
@@ -242,29 +427,19 @@ func sortDevices(devices []Device) {
 	})
 }
 
-// DevicePicker will pick the nth device from the devices input slice.
-func DevicePicker(devices []Device, n int) (string, error) {
-	if n > len(devices) || len(devices) == 0 || n <= 0 {
-		return "", ErrDeviceNotAvailable
-	}
-
-	if n > len(devices) {
-		return "", ErrDeviceNotAvailable
-	}
-
-	return devices[n-1].Addr, nil
-}
-
 func checkInterfacesForPort(port int) error {
-	interfaces, err := net.Interfaces()
+	interfaces, err := interfaceAddrs()
 	if err != nil {
 		return err
 	}
 
+	var lastErr error
+
 	for _, iface := range interfaces {
-		addrs, err := iface.Addrs()
+		addrs, err := ifaceAddrLookup(iface)
 		if err != nil {
-			return err
+			lastErr = err
+			continue
 		}
 
 		for _, addr := range addrs {
@@ -279,15 +454,20 @@ func checkInterfacesForPort(port int) error {
 				IP:   ip,
 			}
 
-			udpConn, err := net.ListenUDP("udp4", &udpAddr)
+			udpConn, err := listenUDP("udp4", &udpAddr)
 			if err != nil {
-				return err
+				lastErr = err
+				continue
 			}
 
 			udpConn.Close()
 			return nil
 
 		}
+	}
+
+	if lastErr != nil {
+		return lastErr
 	}
 
 	return nil

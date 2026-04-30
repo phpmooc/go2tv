@@ -43,7 +43,7 @@ func TestURLtoListenIPandPort(t *testing.T) {
 			outSplit := strings.Split(out, ":")
 
 			if len(outSplit) < 2 {
-				t.Fatalf("%s: Not in ip:port format: %s", tc.name, err.Error())
+				t.Fatalf("%s: Not in ip:port format: %s", tc.name, out)
 			}
 
 			outInt, _ := strconv.Atoi(outSplit[1])

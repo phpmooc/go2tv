@@ -61,11 +61,7 @@ func (s *Server) Start(ffmpegPath, streamKey, port string) (string, error) {
 	}
 	s.tempDir = tempDir
 
-	args, err := BuildCLICommand(streamKey, port, tempDir)
-	if err != nil {
-		s.Cleanup()
-		return "", fmt.Errorf("failed to build command: %w", err)
-	}
+	args := BuildCLICommand(streamKey, port, tempDir)
 
 	cmd := exec.Command(ffmpegPath, args...)
 	setSysProcAttr(cmd)

@@ -1,7 +1,6 @@
 package castprotocol
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync/atomic"
 
@@ -48,9 +47,10 @@ func (p *CustomLoadPayload) SetRequestId(id int) {
 // startTime: start position in seconds
 // duration: total media duration in seconds (0 to let Chromecast detect)
 // subtitleURL: URL of the WebVTT subtitle file (or empty for no subtitles)
+// title: media title shown by the receiver UI
 // live: if true, sets StreamType to "LIVE" to identify as live stream (DMR will show LIVE badge)
 // autoplay: if true, starts playback immediately; if false, waits for PLAY command
-func LoadWithSubtitles(conn cast.Conn, transportId string, mediaURL string, contentType string, startTime int, duration float64, subtitleURL string, live bool, autoplay bool) error {
+func LoadWithSubtitles(conn cast.Conn, transportId string, mediaURL string, contentType string, startTime int, duration float64, subtitleURL string, title string, live bool, autoplay bool) error {
 	streamType := "BUFFERED"
 	if live {
 		streamType = "LIVE"
@@ -65,6 +65,12 @@ func LoadWithSubtitles(conn cast.Conn, transportId string, mediaURL string, cont
 	// Set duration if provided (useful for transcoded streams where Chromecast can't detect it)
 	if duration > 0 {
 		media.Duration = float32(duration)
+	}
+	if title != "" {
+		media.Metadata = &MediaMeta{
+			MetadataType: 0,
+			Title:        title,
+		}
 	}
 
 	var activeTrackIds []int
@@ -127,15 +133,12 @@ func (p *LaunchRequest) SetRequestId(id int) {
 	p.RequestId = id
 }
 
-// DefaultMediaReceiverAppID is the app ID for the Default Media Receiver
-const DefaultMediaReceiverAppID = "CC1AD845"
-
 // LaunchDefaultReceiver launches the Default Media Receiver app without loading media.
 // This allows sending a LoadWithSubtitles command afterwards.
 func LaunchDefaultReceiver(conn cast.Conn) error {
 	payload := &LaunchRequest{
 		Type:  "LAUNCH",
-		AppId: DefaultMediaReceiverAppID,
+		AppId: cast.DefaultMediaReceiverAppID,
 	}
 
 	requestID := nextRequestID()
@@ -152,13 +155,3 @@ func LaunchDefaultReceiver(conn cast.Conn) error {
 
 // CastNamespaceReceiver is the namespace for receiver control messages
 const CastNamespaceReceiver = "urn:x-cast:com.google.cast.receiver"
-
-// MarshalJSON for custom JSON output
-func (m *MediaItemWithTracks) MarshalJSON() ([]byte, error) {
-	type Alias MediaItemWithTracks
-	return json.Marshal(&struct {
-		*Alias
-	}{
-		Alias: (*Alias)(m),
-	})
-}

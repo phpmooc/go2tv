@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -163,10 +164,8 @@ func prependPathDir(dir string) {
 
 	pathEnv := os.Getenv("PATH")
 	entries := filepath.SplitList(pathEnv)
-	for _, entry := range entries {
-		if entry == dir {
-			return
-		}
+	if slices.Contains(entries, dir) {
+		return
 	}
 
 	if pathEnv == "" {

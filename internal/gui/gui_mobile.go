@@ -3,7 +3,6 @@
 package gui
 
 import (
-	"container/ring"
 	"context"
 	"os"
 	"path/filepath"
@@ -21,6 +20,7 @@ import (
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/crashlog"
 	"go2tv.app/go2tv/v2/soapcalls"
 )
 
@@ -28,6 +28,7 @@ import (
 type FyneScreen struct {
 	mu                   sync.RWMutex
 	Debug                *debugWriter
+	DiscoveryDebug       *debugWriter
 	Current              fyne.Window
 	tvdata               *soapcalls.TVPayload
 	chromecastClient     *castprotocol.CastClient
@@ -63,10 +64,8 @@ type FyneScreen struct {
 	Medialoop            bool
 	castingMediaType     string // MIME type of currently casting media
 	hotkeysSuspendCount  int32
-}
-
-type debugWriter struct {
-	ring *ring.Ring
+	Crash                *crashlog.Session
+	PendingCrashPath     string
 }
 
 type devType struct {
@@ -74,12 +73,6 @@ type devType struct {
 	addr        string
 	deviceType  string
 	isAudioOnly bool
-}
-
-func (f *debugWriter) Write(b []byte) (int, error) {
-	f.ring.Value = string(b)
-	f.ring = f.ring.Next()
-	return len(b), nil
 }
 
 // Start .
@@ -93,8 +86,15 @@ func Start(ctx context.Context, s *FyneScreen) {
 		}
 	}
 
-	// Start Chromecast discovery in background
-	go devices.StartChromecastDiscoveryLoop(ctx)
+	devices.StartDiscovery(ctx)
+
+	if app := fyne.CurrentApp(); app != nil {
+		app.Lifecycle().SetOnStopped(func() {
+			if s.Crash != nil {
+				_ = s.Crash.CloseClean()
+			}
+		})
+	}
 
 	tabs := container.NewAppTabs(
 		container.NewTabItem("Go2TV", container.NewVScroll(container.NewPadded(mainWindow(s)))),
@@ -106,10 +106,14 @@ func Start(ctx context.Context, s *FyneScreen) {
 
 	go func() {
 		<-ctx.Done()
+		if s.Crash != nil {
+			_ = s.Crash.CloseClean()
+		}
 		os.Exit(0)
 	}()
 
 	go silentCheckVersion(s)
+	showPendingCrashPopup(s)
 
 	w.ShowAndRun()
 }
@@ -185,37 +189,32 @@ func setPlayPauseView(s string, screen *FyneScreen) {
 		screen.cancelEnablePlay()
 	}
 
-	// Delay the update to avoid conflict with button tap animation.
-	// Fyne's button tap animation doesn't synchronize with Refresh() calls,
-	// causing visual artifacts. Delay by 300ms to let animation complete.
-	go func() {
-		fyne.Do(func() {
-			// Check if we are casting an image
-			isImage := false
-			screen.mu.RLock()
-			if strings.HasPrefix(screen.castingMediaType, "image/") {
-				isImage = true
-			}
-			screen.mu.RUnlock()
+	fyne.Do(func() {
+		// Check if we are casting an image
+		isImage := false
+		screen.mu.RLock()
+		if strings.HasPrefix(screen.castingMediaType, "image/") {
+			isImage = true
+		}
+		screen.mu.RUnlock()
 
-			if isImage {
-				screen.PlayPause.Disable()
-				screen.PlayPause.SetIcon(theme.FileImageIcon())
-				screen.PlayPause.SetText("Image Casting")
-			} else {
-				screen.PlayPause.Enable()
-				switch s {
-				case "Play":
-					screen.PlayPause.Text = lang.L("Play")
-					screen.PlayPause.Icon = theme.MediaPlayIcon()
-				case "Pause":
-					screen.PlayPause.Text = lang.L("Pause")
-					screen.PlayPause.Icon = theme.MediaPauseIcon()
-				}
+		if isImage {
+			screen.PlayPause.Disable()
+			screen.PlayPause.SetIcon(theme.FileImageIcon())
+			screen.PlayPause.SetText("Image")
+		} else {
+			screen.PlayPause.Enable()
+			switch s {
+			case "Play":
+				screen.PlayPause.Text = lang.L("Play")
+				screen.PlayPause.Icon = theme.MediaPlayIcon()
+			case "Pause":
+				screen.PlayPause.Text = lang.L("Pause")
+				screen.PlayPause.Icon = theme.MediaPauseIcon()
 			}
-			screen.PlayPause.Refresh()
-		})
-	}()
+		}
+		screen.PlayPause.Refresh()
+	})
 }
 
 func setMuteUnmuteView(s string, screen *FyneScreen) {
@@ -231,17 +230,24 @@ func setMuteUnmuteView(s string, screen *FyneScreen) {
 }
 
 // NewFyneScreen .
-func NewFyneScreen(version string) *FyneScreen {
+func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 	go2tv := app.NewWithID("app.go2tv.go2tv")
 	go2tv.Settings().SetTheme(go2tvTheme{"Dark"})
 	go2tv.Driver().SetDisableScreenBlanking(true)
 
 	w := go2tv.NewWindow("Go2TV")
+	dw := newDebugWriter(runtimeDebugRingSize)
+	discoveryDebug := newDebugWriter(discoveryDebugRingSize)
+	devices.SetDiscoveryLogOutput(discoveryDebug)
 
 	return &FyneScreen{
-		Current:      w,
-		mediaFormats: []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
-		version:      version,
+		Current:          w,
+		Debug:            dw,
+		DiscoveryDebug:   discoveryDebug,
+		mediaFormats:     []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
+		version:          version,
+		Crash:            crash,
+		PendingCrashPath: crashPath(crash),
 	}
 }
 

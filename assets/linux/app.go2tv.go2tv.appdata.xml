@@ -51,6 +51,18 @@
   </branding>
 
   <releases>
+      <release version="2.3.0" date="2026-04-21" type="stable">
+        <description>
+          <ul>
+            <li>Added resume playback support to continue media from the last saved position.</li>
+            <li>Added a media queue to organize and play files in sequence.</li>
+            <li>Polished the GUI with device badges, layout tuning, and small mobile cleanups.</li>
+            <li>Added better exportable diagnostics and crash reports.</li>
+            <li>Improved device discovery.</li>
+          </ul>
+        </description>
+        <url type="details">https://github.com/alexballas/go2tv/releases/tag/v2.3.0</url>
+      </release>
       <release version="2.2.0" date="2026-03-14" type="stable">
         <description>
           <ul>

@@ -460,13 +460,13 @@ func setAVTransportSoapBuildWithCompat(tvdata *TVPayload, legacyMetadataCompat b
 
 	if legacyMetadataCompat {
 		// Some Samsung renderers reject fully escaped nested DIDL metadata.
-		b = applyLegacyDIDLCompatOnCurrentURIMetadata(b)
+		b = applyLegacyDIDLCompatToCurrentURI(b)
 	}
 
 	return append(xmlStart, b...), nil
 }
 
-func applyLegacyDIDLCompatOnCurrentURIMetadata(input []byte) []byte {
+func applyLegacyDIDLCompatToCurrentURI(input []byte) []byte {
 	startTag := []byte("<CurrentURIMetaData>")
 	endTag := []byte("</CurrentURIMetaData>")
 

@@ -3,15 +3,16 @@
 package gui
 
 import (
-	"container/ring"
 	"context"
 	"embed"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -27,6 +28,7 @@ import (
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/crashlog"
 	"go2tv.app/go2tv/v2/rtmp"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
@@ -45,7 +47,9 @@ type FyneScreen struct {
 	cancelEnablePlay         context.CancelFunc
 	PlayPause                *widget.Button
 	Debug                    *debugWriter
+	DiscoveryDebug           *debugWriter
 	VolumeUp                 *widget.Button
+	SkipPreviousButton       *widget.Button
 	SkipNextButton           *widget.Button
 	tvdata                   *soapcalls.TVPayload
 	tabs                     *container.AppTabs
@@ -67,6 +71,7 @@ type FyneScreen struct {
 	MuteUnmute               *widget.Button
 	VolumeDown               *widget.Button
 	selectedDevice           devType
+	activeDevice             devType
 	selectedDeviceType       string
 	chromecastClient         *castprotocol.CastClient // Active Chromecast connection
 	chromecastActionID       uint64
@@ -95,6 +100,7 @@ type FyneScreen struct {
 	ffmpegPathChanged        bool
 	Medialoop                bool
 	sliderActive             bool
+	dlnaSeekRestart          bool
 	imageAutoSkipTimeout     int
 	Transcode                bool
 	Screencast               bool
@@ -111,8 +117,26 @@ type FyneScreen struct {
 	Hotkeys                  bool
 	hotkeysSuspendCount      int32
 	MediaBrowse              *widget.Button
+	QueueButton              *widget.Button
 	ClearMedia               *widget.Button
 	SubsBrowse               *widget.Button
+	SessionQueue             *SessionQueue
+	queueWindow              fyne.Window
+	queueList                *widget.List
+	queueHeader              *widget.Label
+	queueDetails             *widget.Label
+	queueAddButton           *widget.Button
+	queuePlayNowButton       *widget.Button
+	queueRemoveButton        *widget.Button
+	queueMoveUpButton        *widget.Button
+	queueMoveDownButton      *widget.Button
+	queueClearButton         *widget.Button
+	queueSelectedIndex       int
+	queueRevision            uint64
+	lastQueueUIState         queueUIState
+	queueUIStateValid        bool
+	lastQueueTapIndex        int
+	lastQueueTapAt           time.Time
 	ActiveDeviceLabel        *widget.Label
 	ActiveDeviceCard         *widget.Card
 	rtmpServer               *rtmp.Server
@@ -131,11 +155,17 @@ type FyneScreen struct {
 	imageAutoSkipMediaPath   string
 	imageAutoSkipCancel      context.CancelFunc
 	rtmpMu                   sync.Mutex
+	resumeSession            resumePlaybackSession
+	Crash                    *crashlog.Session
+	PendingCrashPath         string
 }
 
-type debugWriter struct {
-	ring *ring.Ring
-}
+type droppedMediaMode uint8
+
+const (
+	droppedMediaModeReplace droppedMediaMode = iota
+	droppedMediaModeAppend
+)
 
 type devType struct {
 	name        string
@@ -166,12 +196,6 @@ func (s *FyneScreen) updateFFmpegDependentCheckTooltips() {
 	setToolTip(s.transcodeToolTipCheck, s.TranscodeCheckBox)
 	setToolTip(s.screencastToolTipCheck, s.ScreencastCheckBox)
 	setToolTip(s.rtmpServerToolTipCheck, s.rtmpServerCheck)
-}
-
-func (f *debugWriter) Write(b []byte) (int, error) {
-	f.ring.Value = string(b)
-	f.ring = f.ring.Next()
-	return len(b), nil
 }
 
 //go:embed translations
@@ -264,12 +288,20 @@ func Start(ctx context.Context, s *FyneScreen) {
 	s.tabs = tabs
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(tabs, w.Canvas()))
-	w.Resize(fyne.NewSize(1000, 0))
+	minSize := tabs.MinSize()
+	w.Resize(fyne.NewSize(fyne.Max(1000, minSize.Width), minSize.Height+(theme.Padding()*4)))
 	w.CenterOnScreen()
 	w.SetMaster()
 
-	// Start Chromecast discovery in background
-	go devices.StartChromecastDiscoveryLoop(ctx)
+	devices.StartDiscovery(ctx)
+
+	if app := fyne.CurrentApp(); app != nil {
+		app.Lifecycle().SetOnStopped(func() {
+			if s.Crash != nil {
+				_ = s.Crash.CloseClean()
+			}
+		})
+	}
 
 	go func() {
 		<-ctx.Done()
@@ -279,6 +311,9 @@ func Start(ctx context.Context, s *FyneScreen) {
 		}
 		s.rtmpMu.Unlock()
 		stopScreencastSession(s)
+		if s.Crash != nil {
+			_ = s.Crash.CloseClean()
+		}
 		os.Exit(0)
 	}()
 
@@ -292,6 +327,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 	})
 
 	go silentCheckVersion(s)
+	showPendingCrashPopup(s)
 
 	w.ShowAndRun()
 
@@ -333,28 +369,34 @@ func (p *FyneScreen) Fini() {
 
 		gaplessOption := fyne.CurrentApp().Preferences().StringWithFallback("Gapless", "Disabled")
 
+		// Finished-media transitions should always restart from a stopped state.
+		// Otherwise playAction may interpret the follow-up as pause/resume.
+		p.updateScreenState("Stopped")
+
 		// For Chromecast, ignore gapless setting (it's DLNA-specific)
 		isChromecast := p.selectedDeviceType == devices.DeviceTypeChromecast
 
-		// For Chromecast, reset state to Stopped so playAction doesn't interpret as pause
-		if isChromecast {
-			p.updateScreenState("Stopped")
-		}
-
 		if p.NextMediaCheck.Checked && (isChromecast || gaplessOption == "Disabled") {
-			nextMediaName, nextMediaPath, err := getNextMediaOrError(p)
+			_, nextMediaPath, err := getNextAutoPlayMediaOrError(p)
 			if err != nil {
+				if isTraversalBoundaryError(err) {
+					startAfreshPlayButton(p)
+					return
+				}
 				check(p, err)
 				startAfreshPlayButton(p)
 				return
 			}
 
-			p.MediaText.Text = nextMediaName
-			p.mediafile = nextMediaPath
-			p.MediaText.Refresh()
+			if isChromecast && p.reusableChromecastClientForSelectedDevice() != nil {
+				go skipToMediaPathAction(p, nextMediaPath)
+				return
+			}
 
-			if !p.CustomSubsCheck.Checked {
-				autoSelectNextSubs(p.mediafile, p)
+			if err := setCurrentMediaPath(p, nextMediaPath); err != nil {
+				check(p, err)
+				startAfreshPlayButton(p)
+				return
 			}
 
 			go playAction(p)
@@ -384,57 +426,51 @@ func check(s *FyneScreen, err error) {
 	})
 }
 
-func getNextMedia(screen *FyneScreen) (string, string) {
-	filedir := filepath.Dir(screen.mediafile)
-	filelist, err := os.ReadDir(filedir)
-	check(screen, err)
+var (
+	errNoNextQueueMedia     = errors.New("no next queued media")
+	errNoPreviousQueueMedia = errors.New("no previous queued media")
+)
 
-	files := make([]string, 0)
-	getType := func(s string) string {
-		switch {
-		case slices.Contains(screen.imageFormats, filepath.Ext(s)):
-			return "image"
-		case slices.Contains(screen.videoFormats, filepath.Ext(s)):
-			return "video"
-		case slices.Contains(screen.audioFormats, filepath.Ext(s)):
-			return "audio"
-		}
-		return ""
-	}
-
-	for _, f := range filelist {
-		fullPath := filepath.Join(filedir, f.Name())
-
-		if !slices.Contains(screen.mediaFormats, filepath.Ext(fullPath)) {
-			continue
-		}
-
-		if screen.SkinNextOnlySameTypes && getType(screen.mediafile) != getType(fullPath) {
-			continue
-		}
-
-		files = append(files, f.Name())
-	}
-
-	if len(files) == 0 {
-		return "", ""
-	}
-
-	idx := slices.Index(files, filepath.Base(screen.mediafile))
-	if idx+1 == len(files) {
-		return files[0], filepath.Join(filedir, files[0])
-	}
-
-	return files[idx+1], filepath.Join(filedir, files[idx+1])
+// Traversal is queue-only. Local file selection always creates or updates
+// SessionQueue, so next/previous/autoplay operate on one clear source of truth.
+func getAdjacentMedia(screen *FyneScreen, delta int) (string, string, error) {
+	return getAdjacentQueuedMedia(screen, delta, false)
 }
 
-func getNextMediaOrError(screen *FyneScreen) (string, string, error) {
-	name, path := getNextMedia(screen)
-	if name == "" || path == "" {
-		return "", "", errors.New(lang.L("no next media file found in the current folder"))
+func getAdjacentQueuedMedia(screen *FyneScreen, delta int, wrap bool) (string, string, error) {
+	queue, _ := screen.queueSnapshot()
+	if queue == nil || len(queue.Items) == 0 {
+		return "", "", errors.New(lang.L("queue is empty"))
 	}
 
-	return name, path, nil
+	if queue.CurrentIndex < 0 || queue.CurrentIndex >= len(queue.Items) {
+		currentIndex := queue.indexByPath(screen.mediafile)
+		if currentIndex == -1 {
+			return "", "", errors.New(lang.L("current media file is not in the queue"))
+		}
+		queue.CurrentIndex = currentIndex
+	}
+
+	nextIndex := queue.adjacentIndex(delta, screen.SkinNextOnlySameTypes, wrap)
+	if nextIndex == -1 {
+		if delta < 0 {
+			return "", "", errNoPreviousQueueMedia
+		}
+
+		return "", "", errNoNextQueueMedia
+	}
+
+	item := queue.Items[nextIndex]
+	return item.BaseName, item.Path, nil
+}
+
+func isTraversalBoundaryError(err error) bool {
+	return errors.Is(err, errNoNextQueueMedia) ||
+		errors.Is(err, errNoPreviousQueueMedia)
+}
+
+func getNextAutoPlayMediaOrError(screen *FyneScreen) (string, string, error) {
+	return getAdjacentQueuedMedia(screen, 1, true)
 }
 
 func autoSelectNextSubs(v string, screen *FyneScreen) {
@@ -465,54 +501,46 @@ func setPlayPauseView(s string, screen *FyneScreen) {
 		screen.cancelEnablePlay()
 	}
 
-	// Delay the update to avoid conflict with button tap animation.
-	// Fyne's button tap animation doesn't synchronize with Refresh() calls,
-	// causing visual artifacts. Delay by 300ms to let animation complete.
-	go func() {
-		fyne.Do(func() {
-			// Check if we are casting an image
-			isImage := false
-			screen.mu.RLock()
-			if strings.HasPrefix(screen.castingMediaType, "image/") {
-				isImage = true
-			}
-			screen.mu.RUnlock()
+	fyne.Do(func() {
+		// Check if we are casting an image
+		isImage := false
+		screen.mu.RLock()
+		if strings.HasPrefix(screen.castingMediaType, "image/") {
+			isImage = true
+		}
+		screen.mu.RUnlock()
 
-			if isImage {
-				screen.PlayPause.Disable()
-				screen.PlayPause.SetIcon(theme.FileImageIcon())
-				screen.PlayPause.SetText(lang.L("Image Casting") + "  ")
-			} else {
-				state := screen.getScreenState()
-				if state == "Playing" || state == "Paused" {
-					screen.PlayPause.Enable()
-					switch s {
-					case "Play":
-						screen.PlayPause.SetText(lang.L("Play") + "  ")
-						screen.PlayPause.SetIcon(theme.MediaPlayIcon())
-					case "Pause":
-						screen.PlayPause.SetText(lang.L("Pause") + "  ")
-						screen.PlayPause.SetIcon(theme.MediaPauseIcon())
-					}
-				} else {
-					// Stopped or initial state
-					screen.PlayPause.Enable()
-
-					if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked && screen.selectedDeviceType == devices.DeviceTypeChromecast {
-						screen.PlayPause.SetText(lang.L("Start RTMP Session") + "  ")
-					} else {
-						screen.PlayPause.SetText(lang.L("Cast") + "  ")
-					}
+		if isImage {
+			screen.PlayPause.Disable()
+			screen.PlayPause.SetIcon(theme.FileImageIcon())
+			screen.PlayPause.SetText(lang.L("Image Casting") + "  ")
+		} else {
+			state := screen.getScreenState()
+			if state == "Playing" || state == "Paused" {
+				screen.PlayPause.Enable()
+				switch s {
+				case "Play":
+					screen.PlayPause.SetText(lang.L("Play") + "  ")
 					screen.PlayPause.SetIcon(theme.MediaPlayIcon())
+				case "Pause":
+					screen.PlayPause.SetText(lang.L("Pause") + "  ")
+					screen.PlayPause.SetIcon(theme.MediaPauseIcon())
 				}
-			}
-			screen.PlayPause.Refresh()
+			} else {
+				// Stopped or initial state
+				screen.PlayPause.Enable()
 
-			if !screen.ExternalMediaURL.Checked {
-				screen.SkipNextButton.Enable()
+				if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked && screen.selectedDeviceType == devices.DeviceTypeChromecast {
+					screen.PlayPause.SetText(lang.L("Start RTMP Session") + "  ")
+				} else {
+					screen.PlayPause.SetText(lang.L("Cast") + "  ")
+				}
+				screen.PlayPause.SetIcon(theme.MediaPlayIcon())
 			}
-		})
-	}()
+		}
+		screen.PlayPause.Refresh()
+		screen.refreshTraversalControls()
+	})
 }
 
 func setMuteUnmuteView(s string, screen *FyneScreen) {
@@ -543,6 +571,30 @@ func (p *FyneScreen) updateScreenState(a string) {
 	})
 }
 
+func (p *FyneScreen) setActiveDevice(device devType) {
+	p.mu.Lock()
+	p.activeDevice = device
+	p.mu.Unlock()
+
+	fyne.Do(func() {
+		if p.DeviceList != nil {
+			p.DeviceList.Refresh()
+		}
+		p.updateActiveDeviceView()
+	})
+}
+
+func (p *FyneScreen) clearActiveDevice() {
+	p.setActiveDevice(devType{})
+}
+
+func (p *FyneScreen) getActiveDevice() devType {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return p.activeDevice
+}
+
 func (p *FyneScreen) updateActiveDeviceView() {
 	if p.ActiveDeviceCard == nil || p.ActiveDeviceLabel == nil {
 		return
@@ -556,8 +608,9 @@ func (p *FyneScreen) updateActiveDeviceView() {
 		return
 	}
 
-	if p.selectedDevice.name != "" {
-		p.ActiveDeviceLabel.SetText(p.selectedDevice.name)
+	activeDevice := p.getActiveDevice()
+	if activeDevice.name != "" {
+		p.ActiveDeviceLabel.SetText(activeDevice.name)
 		p.ActiveDeviceCard.Show()
 	} else {
 		p.ActiveDeviceCard.Hide()
@@ -584,10 +637,65 @@ func (p *FyneScreen) isChromecastActionCurrent(actionID uint64) bool {
 	return p.chromecastActionID == actionID
 }
 
-func (p *FyneScreen) currentChromecastActionID() uint64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.chromecastActionID
+func chromecastDeviceHost(device devType) string {
+	if device.deviceType != devices.DeviceTypeChromecast || device.addr == "" {
+		return ""
+	}
+
+	u, err := url.Parse(device.addr)
+	if err != nil {
+		return ""
+	}
+
+	return u.Hostname()
+}
+
+func chromecastClientOwnsDevice(client *castprotocol.CastClient, device devType) bool {
+	if client == nil {
+		return false
+	}
+
+	deviceHost := chromecastDeviceHost(device)
+	if deviceHost == "" {
+		return false
+	}
+
+	return strings.EqualFold(client.Host(), deviceHost)
+}
+
+func (p *FyneScreen) chromecastSessionClient() *castprotocol.CastClient {
+	client := p.chromecastClient
+	if client == nil || !client.IsConnected() {
+		return nil
+	}
+
+	if !chromecastClientOwnsDevice(client, p.getActiveDevice()) {
+		return nil
+	}
+
+	return client
+}
+
+func (p *FyneScreen) activeChromecastPlaybackClient() *castprotocol.CastClient {
+	switch p.getScreenState() {
+	case "Playing", "Paused":
+		return p.chromecastSessionClient()
+	default:
+		return nil
+	}
+}
+
+func (p *FyneScreen) reusableChromecastClientForSelectedDevice() *castprotocol.CastClient {
+	client := p.chromecastClient
+	if client == nil || !client.IsConnected() {
+		return nil
+	}
+
+	if !chromecastClientOwnsDevice(client, p.selectedDevice) {
+		return nil
+	}
+
+	return client
 }
 
 // checkChromecastCompatibility checks if loaded media needs transcoding for Chromecast.
@@ -632,7 +740,7 @@ func (p *FyneScreen) checkChromecastCompatibility() {
 }
 
 // NewFyneScreen creates and initializes a new FyneScreen instance with the provided version string.
-func NewFyneScreen(version string) *FyneScreen {
+func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 	go2tv := app.NewWithID("app.go2tv.go2tv")
 
 	// Hack. Ongoing discussion in https://github.com/fyne-io/fyne/issues/5333
@@ -659,9 +767,9 @@ func NewFyneScreen(version string) *FyneScreen {
 		currentDir = ""
 	}
 
-	dw := &debugWriter{
-		ring: ring.New(1000),
-	}
+	dw := newDebugWriter(runtimeDebugRingSize)
+	discoveryDebug := newDebugWriter(discoveryDebugRingSize)
+	devices.SetDiscoveryLogOutput(discoveryDebug)
 
 	ffmpegPath := func() string {
 		if go2tv.Preferences().String("ffmpeg") != "" {
@@ -676,48 +784,102 @@ func NewFyneScreen(version string) *FyneScreen {
 	}()
 
 	return &FyneScreen{
-		Current:        w,
-		currentmfolder: currentDir,
-		ffmpegPath:     ffmpegPath,
-		mediaFormats:   []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
-		imageFormats:   []string{".jpg", ".jpeg", ".png"},
-		videoFormats:   []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv"},
-		audioFormats:   []string{".mp3", ".flac", ".wav", ".m4a"},
-		version:        version,
-		Debug:          dw,
+		Current:            w,
+		currentmfolder:     currentDir,
+		ffmpegPath:         ffmpegPath,
+		mediaFormats:       []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
+		imageFormats:       []string{".jpg", ".jpeg", ".png"},
+		videoFormats:       []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv"},
+		audioFormats:       []string{".mp3", ".flac", ".wav", ".m4a"},
+		version:            version,
+		Debug:              dw,
+		DiscoveryDebug:     discoveryDebug,
+		Crash:              crash,
+		PendingCrashPath:   crashPath(crash),
+		queueSelectedIndex: -1,
+		lastQueueTapIndex:  -1,
 	}
+}
+
+func crashPath(crash *crashlog.Session) string {
+	if crash == nil {
+		return ""
+	}
+
+	return crash.PreviousCrashPath()
 }
 
 func onDropFiles(screen *FyneScreen) func(p fyne.Position, u []fyne.URI) {
 	return func(p fyne.Position, u []fyne.URI) {
-		if screen.Screencast {
-			return
+		handleDroppedFiles(screen, droppedMediaModeReplace, u)
+	}
+}
+
+func handleDroppedFiles(screen *FyneScreen, mode droppedMediaMode, uris []fyne.URI) {
+	mfiles, sfiles := splitDroppedFiles(screen, uris)
+
+	if mode == droppedMediaModeReplace && len(sfiles) > 0 {
+		screen.CustomSubsCheck.SetChecked(true)
+		selectSubsFile(screen, sfiles[0])
+	}
+
+	if len(mfiles) == 0 {
+		return
+	}
+
+	if err := screen.droppedMediaBlockedErrorForMode(mode); err != nil {
+		check(screen, err)
+		return
+	}
+
+	paths := make([]string, 0, len(mfiles))
+	for _, mediaURI := range mfiles {
+		paths = append(paths, mediaURI.Path())
+	}
+
+	go func() {
+		var err error
+		switch mode {
+		case droppedMediaModeAppend:
+			err = appendMediaPaths(screen, paths)
+		default:
+			err = selectMediaPaths(screen, paths)
 		}
 
-		var mfiles, sfiles []fyne.URI
+		check(screen, err)
+	}()
+}
 
-	out:
-		for _, f := range u {
-			if strings.HasSuffix(strings.ToUpper(f.Name()), ".SRT") {
-				sfiles = append(sfiles, f)
-				continue
+func splitDroppedFiles(screen *FyneScreen, uris []fyne.URI) ([]fyne.URI, []fyne.URI) {
+	var mfiles, sfiles []fyne.URI
+
+out:
+	for _, f := range uris {
+		if strings.HasSuffix(strings.ToUpper(f.Name()), ".SRT") {
+			sfiles = append(sfiles, f)
+			continue
+		}
+
+		for _, s := range screen.mediaFormats {
+			if strings.HasSuffix(strings.ToUpper(f.Name()), strings.ToUpper(s)) {
+				mfiles = append(mfiles, f)
+				continue out
 			}
-
-			for _, s := range screen.mediaFormats {
-				if strings.HasSuffix(strings.ToUpper(f.Name()), strings.ToUpper(s)) {
-					mfiles = append(mfiles, f)
-					continue out
-				}
-			}
 		}
+	}
 
-		if len(sfiles) > 0 {
-			screen.CustomSubsCheck.SetChecked(true)
-			selectSubsFile(screen, sfiles[0])
-		}
+	return mfiles, sfiles
+}
 
-		if len(mfiles) > 0 {
-			selectMediaFile(screen, mfiles[0])
-		}
+func (screen *FyneScreen) droppedMediaBlockedErrorForMode(mode droppedMediaMode) error {
+	switch {
+	case screen.Screencast:
+		return errors.New(lang.L("disable Cast Desktop before dropping files"))
+	case screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked:
+		return errors.New(lang.L("disable RTMP server before dropping files"))
+	case mode == droppedMediaModeAppend && screen.ExternalMediaURL != nil && screen.ExternalMediaURL.Checked:
+		return errors.New(lang.L("disable Media from URL before adding queue files"))
+	default:
+		return nil
 	}
 }

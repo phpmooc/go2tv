@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed"
 	"errors"
@@ -14,14 +15,18 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/crashlog"
+	"go2tv.app/go2tv/v2/internal/devicecolors"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
 )
@@ -54,18 +59,30 @@ type flagResults struct {
 }
 
 func main() {
-	if err := run(); err != nil {
-		if errors.Is(err, errNoflag) {
+	crash, err := crashlog.Init("go2tv")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: crash logging disabled: %v\n", err)
+	}
+
+	runErr := run(crash)
+	if crash != nil {
+		if err := crash.CloseClean(); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to clean crash log state: %v\n", err)
+		}
+	}
+
+	if runErr != nil {
+		if errors.Is(runErr, errNoflag) {
 			flag.Usage()
 			os.Exit(0)
 		}
 
-		fmt.Fprintf(os.Stderr, "Encountered error(s): %s\n", err)
+		fmt.Fprintf(os.Stderr, "Encountered error(s): %s\n", runErr)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(crash *crashlog.Session) error {
 	var (
 		absMediaFile, mediaType string
 		mediaFile               any
@@ -85,6 +102,10 @@ func run() error {
 
 	if flagRes.exit {
 		return nil
+	}
+
+	if crash != nil && crash.PreviousCrashPath() != "" {
+		fmt.Fprintf(os.Stderr, "Previous crash report: %s\n", crash.PreviousCrashPath())
 	}
 
 	if *mediaArg != "" {
@@ -322,7 +343,7 @@ func runChromecastCLI(ctx context.Context, cancel context.CancelFunc, deviceURL,
 	go func() {
 		// Use LIVE stream type for URL/stdin streams (DMR shows LIVE badge, but buffer unchanged)
 		_, isStream := mediaFile.(io.ReadCloser)
-		if err := client.Load(mediaURL, mediaType, 0, mediaDuration, subtitleURL, isStream); err != nil {
+		if err := client.Load(mediaURL, mediaType, mediaPath, 0, mediaDuration, subtitleURL, isStream); err != nil {
 			fmt.Fprintf(os.Stderr, "chromecast load: %v\n", err)
 		}
 	}()
@@ -371,6 +392,7 @@ func runChromecastCLI(ctx context.Context, cancel context.CancelFunc, deviceURL,
 type Device struct {
 	Model string
 	URL   string
+	Type  string
 }
 
 type refreshMsg []Device
@@ -379,24 +401,51 @@ type listDevicesModel struct {
 	devices []Device
 }
 
+var previousList []Device
+
 func checkDevices() tea.Cmd {
 	return func() tea.Msg {
-		deviceList, _ := devices.LoadAllDevices(2)
+		deviceList, _ := devices.LoadAllDevices()
 
 		var rMsg refreshMsg
+
+	outer:
+		for _, old := range previousList {
+			oldAddress, _ := url.Parse(old.URL)
+			for _, dev := range deviceList {
+				if dev.Addr == old.URL {
+					continue outer
+				}
+			}
+
+			if utils.HostPortIsAlive(oldAddress.Host) {
+				rMsg = append(rMsg, old)
+			}
+
+		}
+
 		for _, dev := range deviceList {
 			rMsg = append(rMsg, Device{
 				Model: dev.Name,
 				URL:   dev.Addr,
+				Type:  dev.Type,
 			})
 		}
 
+		slices.SortFunc(rMsg, func(a, b Device) int {
+			if a.Type != b.Type {
+				return cmp.Compare(a.Type, b.Type)
+			}
+			return strings.Compare(a.Model, b.Model)
+		})
+
+		previousList = rMsg
 		return rMsg
 	}
 }
 
 func (m listDevicesModel) Init() tea.Cmd {
-	devices.StartChromecastDiscoveryLoop(context.Background())
+	devices.StartDiscovery(context.Background())
 	return checkDevices()
 }
 
@@ -417,11 +466,35 @@ func (m listDevicesModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+var (
+	chromecastTag = deviceTagStyle(devices.DeviceTypeChromecast)
+	dlnaTag       = deviceTagStyle(devices.DeviceTypeDLNA)
+)
+
+func deviceTagStyle(deviceType string) lipgloss.Style {
+	palette := devicecolors.DarkPalette(deviceType)
+	return lipgloss.NewStyle().
+		Foreground(lipgloss.Color(devicecolors.Hex(palette.Text))).
+		Background(lipgloss.Color(devicecolors.Hex(palette.Fill))).
+		Bold(true)
+}
+
+func typeTag(t string) string {
+	switch strings.ToLower(t) {
+	case "chromecast":
+		return chromecastTag.Render("Chromecast")
+	case "dlna":
+		return dlnaTag.Render("DLNA")
+	default:
+		return t
+	}
+}
+
 func (m listDevicesModel) View() string {
 	var s strings.Builder
 	s.WriteString("Scanning devices... (q to quit)\n\n")
 	for _, dev := range m.devices {
-		s.WriteString("• " + dev.Model + " [" + dev.URL + "] " + "\n")
+		s.WriteString("• " + dev.Model + " " + typeTag(dev.Type) + " [" + dev.URL + "]\n")
 	}
 	return s.String()
 }

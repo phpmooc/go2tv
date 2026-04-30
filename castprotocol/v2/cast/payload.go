@@ -1,5 +1,8 @@
 package cast
 
+// DefaultMediaReceiverAppID is the Chromecast Default Media Receiver app ID.
+const DefaultMediaReceiverAppID = "C2568A1A"
+
 var (
 	// Known Payload headers
 	ConnectHeader     = PayloadHeader{Type: "CONNECT"}

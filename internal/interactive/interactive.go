@@ -90,7 +90,7 @@ func (p *NewScreen) EmitMsg(inputtext string) {
 func (p *NewScreen) InterInit(tv *soapcalls.TVPayload, c chan error) {
 	p.TV = tv
 
-	muteChecker := time.NewTicker(1 * time.Second)
+	muteChecker := time.NewTicker(time.Second)
 
 	go func() {
 		for range muteChecker.C {

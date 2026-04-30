@@ -14,7 +14,7 @@ const (
 	soapHTTPKeepAlive             = 30 * time.Second
 	soapHTTPTLSHandshakeTimeout   = 5 * time.Second
 	soapHTTPResponseHeaderTimeout = 10 * time.Second
-	soapHTTPExpectContinueTimeout = 1 * time.Second
+	soapHTTPExpectContinueTimeout = time.Second
 	soapHTTPIdleConnTimeout       = 90 * time.Second
 )
 

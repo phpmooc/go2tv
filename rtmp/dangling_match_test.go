@@ -11,10 +11,7 @@ func TestIsGo2tvRTMPFfmpegArgs(t *testing.T) {
 
 	tempRoot := os.TempDir()
 	tempDir := filepath.Join(tempRoot, "go2tv-rtmp-123")
-	args, err := BuildCLICommand("key", "1935", tempDir)
-	if err != nil {
-		t.Fatalf("BuildCLICommand: %v", err)
-	}
+	args := BuildCLICommand("key", "1935", tempDir)
 
 	full := append([]string{"ffmpeg"}, args...)
 	if !isGo2tvRTMPFfmpegArgs(full, "1935") {
@@ -25,10 +22,7 @@ func TestIsGo2tvRTMPFfmpegArgs(t *testing.T) {
 	}
 
 	badTempDir := filepath.Join(tempRoot, "not-go2tv-rtmp-123")
-	args2, err := BuildCLICommand("key", "1935", badTempDir)
-	if err != nil {
-		t.Fatalf("BuildCLICommand(bad): %v", err)
-	}
+	args2 := BuildCLICommand("key", "1935", badTempDir)
 	full2 := append([]string{"ffmpeg"}, args2...)
 	if isGo2tvRTMPFfmpegArgs(full2, "1935") {
 		t.Fatalf("expected no match")

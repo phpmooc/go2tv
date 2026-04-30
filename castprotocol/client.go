@@ -7,6 +7,9 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"path"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -109,13 +112,122 @@ func isTimeoutError(err error) bool {
 	return false
 }
 
+func (c *CastClient) defaultReceiverReady() bool {
+	app := c.app.App()
+	return app != nil && app.AppId == cast.DefaultMediaReceiverAppID && app.TransportId != ""
+}
+
+func normalizeMediaTitle(title string, mediaURL string) string {
+	if normalized := deriveMediaTitle(title); normalized != "" {
+		return normalized
+	}
+	return deriveMediaTitle(mediaURL)
+}
+
+func deriveMediaTitle(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	if u, err := url.Parse(value); err == nil && u.Scheme != "" {
+		if base := path.Base(u.Path); base != "" && base != "." && base != "/" {
+			return base
+		}
+		if host := strings.TrimSpace(u.Host); host != "" {
+			return host
+		}
+	}
+
+	if base := filepath.Base(value); base != "" && base != "." && base != string(filepath.Separator) {
+		return base
+	}
+
+	return value
+}
+
+// Ensure the Default Media Receiver is running before custom media commands.
+func (c *CastClient) ensureDefaultReceiverReady() error {
+	if c.defaultReceiverReady() {
+		return nil
+	}
+
+	if err := c.app.Update(); err == nil && c.defaultReceiverReady() {
+		return nil
+	}
+
+	var lastErr error
+	for attempt := range 5 {
+		if !c.IsConnected() {
+			c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during receiver launch, aborting silently")
+			return nil
+		}
+
+		c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", attempt+1).Msg("launching default receiver")
+		if err := LaunchDefaultReceiver(c.conn); err != nil {
+			lastErr = err
+			if isTimeoutError(err) && attempt < 4 {
+				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", attempt+1).Err(err).Msg("timeout, TV may be waking up, retrying...")
+				if !c.IsConnected() {
+					c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during retry wait, aborting silently")
+					return nil
+				}
+				time.Sleep(4 * time.Second)
+				continue
+			}
+			c.Log().Error().Str("Method", "ensureDefaultReceiverReady").Err(err).Msg("launch receiver failed")
+			return fmt.Errorf("launch receiver: %w", err)
+		}
+
+		for i := range 8 {
+			if !c.IsConnected() {
+				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during app update, aborting silently")
+				return nil
+			}
+
+			if err := c.app.Update(); err != nil {
+				lastErr = err
+				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", i+1).Err(err).Msg("app.Update retry")
+				time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+				continue
+			}
+
+			if c.defaultReceiverReady() {
+				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Str("TransportId", c.app.App().TransportId).Msg("default receiver ready")
+				return nil
+			}
+
+			lastErr = fmt.Errorf("failed to get default receiver transport ID after retries")
+			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+		}
+
+		if attempt < 4 {
+			c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", attempt+1).Msg("receiver not ready, retrying...")
+			if !c.IsConnected() {
+				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during retry wait, aborting silently")
+				return nil
+			}
+			time.Sleep(4 * time.Second)
+			continue
+		}
+	}
+
+	if lastErr == nil {
+		lastErr = fmt.Errorf("failed to get default receiver transport ID after retries")
+	}
+
+	c.Log().Error().Str("Method", "ensureDefaultReceiverReady").Err(lastErr).Msg("failed to launch default receiver")
+	return lastErr
+}
+
 // Load loads media from URL onto the Chromecast.
 // startTime is the position in seconds to start playback from.
 // duration is the total media duration in seconds (0 to let Chromecast detect).
 // If subtitleURL is provided, uses custom load command with subtitle tracks.
 // If live is true, uses StreamType "LIVE" to identify as live stream.
-func (c *CastClient) Load(mediaURL string, contentType string, startTime int, duration float64, subtitleURL string, live bool) error {
-	c.Log().Debug().Str("Method", "Load").Str("URL", mediaURL).Str("ContentType", contentType).Int("StartTime", startTime).Float64("Duration", duration).Bool("HasSubs", subtitleURL != "").Bool("Live", live).Msg("loading media")
+func (c *CastClient) Load(mediaURL string, contentType string, title string, startTime int, duration float64, subtitleURL string, live bool) error {
+	mediaTitle := normalizeMediaTitle(title, mediaURL)
+	c.Log().Debug().Str("Method", "Load").Str("URL", mediaURL).Str("ContentType", contentType).Str("Title", mediaTitle).Int("StartTime", startTime).Float64("Duration", duration).Bool("HasSubs", subtitleURL != "").Bool("Live", live).Msg("loading media")
 
 	// Check if connection is still active, reconnect if needed
 	// This handles cases where Close() was called but the client is being reused
@@ -126,10 +238,10 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 		}
 	}
 
-	// If no subtitles, no custom duration, and NOT a live stream: use standard app.Load()
+	// If no subtitles, no custom duration, no title, and NOT a live stream: use standard app.Load()
 	// For live streams, we MUST use custom LoadWithSubtitles to set StreamType "LIVE"
 	// (go-chromecast library hardcodes StreamType "BUFFERED" so we need custom path for LIVE)
-	if subtitleURL == "" && duration == 0 && !live {
+	if subtitleURL == "" && duration == 0 && mediaTitle == "" && !live {
 		// Retry loop for TV wake-up scenarios (timeout errors)
 		var lastErr error
 		for attempt := range 5 {
@@ -160,6 +272,10 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 	// With subtitles or custom duration: launch the app first WITHOUT loading media, then send custom load
 	// This prevents double playback (first without subs, then with subs queued)
 	// Retry loop for TV wake-up scenarios
+	if err := c.ensureDefaultReceiverReady(); err != nil {
+		return err
+	}
+
 	var lastErr error
 	for attempt := range 5 {
 		if !c.IsConnected() {
@@ -167,48 +283,16 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 			return nil
 		}
 
-		c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Msg("launching default receiver")
-		if err := LaunchDefaultReceiver(c.conn); err != nil {
-			lastErr = err
-			if isTimeoutError(err) && attempt < 5 {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Err(err).Msg("timeout, TV may be waking up, retrying...")
-				if !c.IsConnected() {
-					c.Log().Debug().Str("Method", "Load").Msg("connection closed during retry wait, aborting silently")
-					return nil
-				}
-				time.Sleep(4 * time.Second)
-				continue
-			}
-			c.Log().Error().Str("Method", "Load").Err(err).Msg("launch receiver failed")
-			return fmt.Errorf("launch receiver: %w", err)
-		}
-
-		// Retry getting app state with backoff (handles "media receiver app not available")
-		var transportId string
-		for i := range 8 {
-			if !c.IsConnected() {
-				c.Log().Debug().Str("Method", "Load").Msg("connection closed during app update, aborting silently")
-				return nil
-			}
-
-			if err := c.app.Update(); err != nil {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", i+1).Err(err).Msg("app.Update retry")
-				time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
-				continue
-			}
-			app := c.app.App()
-			if app != nil && app.TransportId != "" {
-				transportId = app.TransportId
-				c.Log().Debug().Str("Method", "Load").Str("TransportId", transportId).Msg("got transport ID")
-				break
-			}
-			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
+		app := c.app.App()
+		transportId := ""
+		if app != nil {
+			transportId = app.TransportId
 		}
 
 		if transportId == "" {
-			lastErr = fmt.Errorf("failed to get transport ID after retries")
-			if attempt < 5 {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Msg("no transport ID, TV may be waking up, retrying...")
+			lastErr = fmt.Errorf("failed to get transport ID after receiver launch")
+			if attempt < 4 {
+				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt+1).Msg("no transport ID, retrying...")
 				if !c.IsConnected() {
 					c.Log().Debug().Str("Method", "Load").Msg("connection closed during retry wait, aborting silently")
 					return nil
@@ -216,14 +300,14 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 				time.Sleep(4 * time.Second)
 				continue
 			}
-			c.Log().Error().Str("Method", "Load").Msg("failed to get transport ID")
+			c.Log().Error().Str("Method", "Load").Err(lastErr).Msg("failed to get transport ID")
 			return lastErr
 		}
 
 		// For live streams: load PAUSED then immediately send PLAY command
 		// This simulates a "fast click" which avoids the 20-30s buffer that autoplay=true triggers
 		autoplay := !live // Only autoplay if NOT a live stream
-		err := LoadWithSubtitles(c.conn, transportId, mediaURL, contentType, startTime, duration, subtitleURL, live, autoplay)
+		err := LoadWithSubtitles(c.conn, transportId, mediaURL, contentType, startTime, duration, subtitleURL, mediaTitle, live, autoplay)
 		if err != nil {
 			lastErr = err
 			if isTimeoutError(err) && attempt < 5 {
@@ -278,8 +362,9 @@ func (c *CastClient) Load(mediaURL string, contentType string, startTime int, du
 // Unlike Load, this skips launching the receiver.
 // Use this when the receiver is already playing media and you want to load new content.
 // If live is true, uses StreamType "LIVE" to identify as live stream.
-func (c *CastClient) LoadOnExisting(mediaURL string, contentType string, startTime int, duration float64, subtitleURL string, live bool) error {
-	c.Log().Debug().Str("Method", "LoadOnExisting").Str("URL", mediaURL).Str("ContentType", contentType).Int("StartTime", startTime).Float64("Duration", duration).Bool("HasSubs", subtitleURL != "").Bool("Live", live).Msg("loading media on existing receiver")
+func (c *CastClient) LoadOnExisting(mediaURL string, contentType string, title string, startTime int, duration float64, subtitleURL string, live bool) error {
+	mediaTitle := normalizeMediaTitle(title, mediaURL)
+	c.Log().Debug().Str("Method", "LoadOnExisting").Str("URL", mediaURL).Str("ContentType", contentType).Str("Title", mediaTitle).Int("StartTime", startTime).Float64("Duration", duration).Bool("HasSubs", subtitleURL != "").Bool("Live", live).Msg("loading media on existing receiver")
 
 	// LoadOnExisting requires an active connection (it's designed for already-running receivers)
 	// Unlike Load(), we don't auto-reconnect because that would defeat the optimization purpose
@@ -310,7 +395,7 @@ func (c *CastClient) LoadOnExisting(mediaURL string, contentType string, startTi
 	}
 
 	// For LoadOnExisting, always autoplay since it's for seek operations on active content
-	err := LoadWithSubtitles(c.conn, transportId, mediaURL, contentType, startTime, duration, subtitleURL, live, true)
+	err := LoadWithSubtitles(c.conn, transportId, mediaURL, contentType, startTime, duration, subtitleURL, mediaTitle, live, true)
 	if err != nil {
 		c.Log().Error().Str("Method", "LoadOnExisting").Err(err).Msg("failed")
 	} else {

@@ -15,30 +15,23 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
-	"github.com/h2non/filetype"
+	"path/filepath"
 
 	"github.com/buger/jsonparser"
+	"github.com/h2non/filetype"
 	"github.com/pkg/errors"
+	log "github.com/sirupsen/logrus"
 	"go2tv.app/go2tv/v2/castprotocol/v2/cast"
 	pb "go2tv.app/go2tv/v2/castprotocol/v2/cast/proto"
 	"go2tv.app/go2tv/v2/castprotocol/v2/playlists"
 	"go2tv.app/go2tv/v2/castprotocol/v2/storage"
-	"path/filepath"
 )
 
 var (
-	// Global request id
-	requestID int
-	_         App = &Application{}
+	_ App = &Application{}
 )
 
 const (
-	// 'CC1AD845' seems to be a predefined app; check link
-	// https://gist.github.com/jloutsenhizer/8855258
-	defaultChromecastAppID = "CC1AD845"
-
 	defaultSender = "sender-0"
 	defaultRecv   = "receiver-0"
 
@@ -99,6 +92,9 @@ type Application struct {
 
 	// Internal mapping of request id to result channel
 	resultChanMap map[int]chan *pb.CastMessage
+	resultChanMu  sync.RWMutex
+	requestMu     sync.Mutex
+	requestID     int
 
 	messageMu sync.Mutex
 	// Relay messages received so users can add custom logic to
@@ -285,7 +281,10 @@ func (a *Application) recvMessages() {
 	for msg := range a.conn.MsgChan() {
 		requestID, err := jsonparser.GetInt([]byte(*msg.PayloadUtf8), "requestId")
 		if err == nil {
-			if resultChan, ok := a.resultChanMap[int(requestID)]; ok {
+			a.resultChanMu.RLock()
+			resultChan, ok := a.resultChanMap[int(requestID)]
+			a.resultChanMu.RUnlock()
+			if ok {
 				resultChan <- msg
 				// Relay the event to any user specified message funcs.
 				a.messageChan <- msg
@@ -601,8 +600,8 @@ func (a *Application) Seek(value int) error {
 	// TODO: find a better way to handle when chromecast
 	// apps don't handle certain commands.
 	appsSeekTo := []string{
-		"9AC194DC", // Plex
-		"CC1AD845", // Default media
+		"9AC194DC",                     // Plex
+		cast.DefaultMediaReceiverAppID, // Default media
 	}
 
 	if slices.Contains(appsSeekTo, a.application.AppId) {
@@ -705,7 +704,7 @@ func (a *Application) PlayableMediaType(filename string) bool {
 		return true
 	}
 
-	switch path.Ext(filename) {
+	switch strings.ToLower(path.Ext(filename)) {
 	case ".avi":
 		return true
 	}
@@ -958,7 +957,7 @@ func (a *Application) QueueLoadItems(mediaItems []mediaItem, contentType string)
 func (a *Application) ensureIsDefaultMediaReceiver() error {
 	// If the current chromecast application isn't the Default Media Receiver
 	// we need to change it.
-	return a.ensureIsAppID(defaultChromecastAppID)
+	return a.ensureIsAppID(cast.DefaultMediaReceiverAppID)
 }
 
 func (a *Application) ensureIsAppID(appID string) error {
@@ -1256,30 +1255,39 @@ func (a *Application) log(message string, args ...any) {
 }
 
 func (a *Application) send(payload cast.Payload, sourceID, destinationID, namespace string) (int, error) {
-	// NOTE: Not concurrent safe, but currently only synchronous flow is possible
-	// TODO(vishen): just make concurrent safe regardless of current flow
-	requestID += 1
+	a.requestMu.Lock()
+	a.requestID += 1
+	requestID := a.requestID
+	a.requestMu.Unlock()
+
 	payload.SetRequestId(requestID)
 	return requestID, a.conn.Send(requestID, payload, sourceID, destinationID, namespace)
 }
 
 func (a *Application) sendAndWait(payload cast.Payload, sourceID, destinationID, namespace string) (*pb.CastMessage, error) {
-	requestID, err := a.send(payload, sourceID, destinationID, namespace)
-	if err != nil {
-		return nil, err
-	}
+	a.requestMu.Lock()
+	a.requestID += 1
+	requestID := a.requestID
+	a.requestMu.Unlock()
+	payload.SetRequestId(requestID)
 
 	// Set a timeout to wait for the response
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	// TODO(vishen): not concurrent safe. Not a problem at the moment
-	// because only synchronous flow currently allowed.
 	resultChan := make(chan *pb.CastMessage, 1)
+	a.resultChanMu.Lock()
 	a.resultChanMap[requestID] = resultChan
+	a.resultChanMu.Unlock()
 	defer func() {
+		a.resultChanMu.Lock()
 		delete(a.resultChanMap, requestID)
+		a.resultChanMu.Unlock()
 	}()
+
+	if err := a.conn.Send(requestID, payload, sourceID, destinationID, namespace); err != nil {
+		return nil, err
+	}
 
 	select {
 	case <-ctx.Done():
@@ -1317,19 +1325,8 @@ func (a *Application) sendMediaRecv(payload cast.Payload) error {
 	return err
 }
 
-func (a *Application) sendAndWaitDefaultConn(payload cast.Payload) (*pb.CastMessage, error) {
-	return a.sendAndWait(payload, defaultSender, defaultRecv, namespaceConn)
-}
-
 func (a *Application) sendAndWaitDefaultRecv(payload cast.Payload) (*pb.CastMessage, error) {
 	return a.sendAndWait(payload, defaultSender, defaultRecv, namespaceRecv)
-}
-
-func (a *Application) sendAndWaitMediaConn(payload cast.Payload) (*pb.CastMessage, error) {
-	if a.application == nil {
-		return nil, ErrApplicationNotSet
-	}
-	return a.sendAndWait(payload, defaultSender, a.application.TransportId, namespaceConn)
 }
 
 func (a *Application) sendAndWaitMediaRecv(payload cast.Payload) (*pb.CastMessage, error) {

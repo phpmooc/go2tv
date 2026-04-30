@@ -17,15 +17,5 @@ func IsHLSStream(mediaURL, mediaType string) bool {
 	}
 
 	mime := strings.ToLower(strings.TrimSpace(mediaType))
-	if strings.Contains(mime, "vnd.apple.mpegurl") {
-		return true
-	}
-	if strings.Contains(mime, "x-mpegurl") {
-		return true
-	}
-	if strings.Contains(mime, "mpegurl") {
-		return true
-	}
-
-	return false
+	return strings.Contains(mime, "mpegurl")
 }

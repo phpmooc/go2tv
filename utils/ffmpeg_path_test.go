@@ -79,7 +79,7 @@ func TestResolveFFmpegPathPreferredDirectory(t *testing.T) {
 	}
 }
 
-func TestResolveFFmpegPathPreferredDirectoryDoesNotFallBackToPATH(t *testing.T) {
+func TestResolveFFmpegPathPrefersDir(t *testing.T) {
 	dir := t.TempDir()
 	otherDir := t.TempDir()
 	otherFFmpegPath := filepath.Join(otherDir, "ffmpeg")

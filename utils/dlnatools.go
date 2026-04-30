@@ -191,14 +191,14 @@ func ClockTimeToSeconds(strtime string) (int, error) {
 }
 
 // SecondsToClockTime converts seconds to seconds relative time.
-func SecondsToClockTime(secs int) (string, error) {
+func SecondsToClockTime(secs int) string {
 	hours := secs / 3600
 	secs %= 3600
 	minutes := secs / 60
 	secs %= 60
 
 	str := fmt.Sprintf("%02d:%02d:%02d", hours, minutes, secs)
-	return str, nil
+	return str
 }
 
 // FormatClockTime converts clock time to a more expected format of clock time.
@@ -208,10 +208,5 @@ func FormatClockTime(strtime string) (string, error) {
 		return "", ErrInvalidClockFormat
 	}
 
-	out, err := SecondsToClockTime(sec)
-	if err != nil {
-		return "", ErrInvalidClockFormat
-	}
-
-	return out, nil
+	return SecondsToClockTime(sec), nil
 }

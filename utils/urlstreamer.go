@@ -24,7 +24,7 @@ const (
 	streamHTTPKeepAlive             = 30 * time.Second
 	streamHTTPTLSHandshakeTimeout   = 5 * time.Second
 	streamHTTPResponseHeaderTimeout = 10 * time.Second
-	streamHTTPExpectContinueTimeout = 1 * time.Second
+	streamHTTPExpectContinueTimeout = time.Second
 	streamHTTPIdleConnTimeout       = 90 * time.Second
 )
 

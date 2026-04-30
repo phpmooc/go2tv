@@ -40,7 +40,7 @@ func callbackEventXML(state, actions string) string {
 		`</InstanceID></Event></LastChange></property></propertyset>`
 }
 
-func TestCallbackHandlerAcceptsMissingActionsAndRepeatedState(t *testing.T) {
+func TestCallbackHandlerHandlesMissingActionsAndRepeatedState(t *testing.T) {
 	tv := &soapcalls.TVPayload{
 		MediaType:                   "video/mp4",
 		MediaRenderersStates:        make(map[string]*soapcalls.States),

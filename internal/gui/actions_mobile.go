@@ -26,6 +26,23 @@ import (
 	"go2tv.app/go2tv/v2/utils"
 )
 
+func chromecastMediaTitle(screen *FyneScreen, fallback string) string {
+	if screen == nil {
+		return fallback
+	}
+	if screen.MediaText != nil {
+		if title := strings.TrimSpace(screen.MediaText.Text); title != "" {
+			return title
+		}
+	}
+	if screen.mediafile != nil {
+		if title := strings.TrimSpace(screen.mediafile.Name()); title != "" {
+			return title
+		}
+	}
+	return fallback
+}
+
 func muteAction(screen *FyneScreen) {
 	w := screen.Current
 
@@ -517,8 +534,8 @@ func stopAction(screen *FyneScreen) {
 	}()
 }
 
-func getDevices(delay int) ([]devType, error) {
-	deviceList, err := devices.LoadAllDevices(delay)
+func getDevices() ([]devType, error) {
+	deviceList, err := devices.LoadAllDevices()
 	if err != nil {
 		return nil, fmt.Errorf("getDevices error: %w", err)
 	}
@@ -608,6 +625,8 @@ func volumeAction(screen *FyneScreen, up bool) {
 }
 
 func startAfreshPlayButton(screen *FyneScreen) {
+	screen.nextChromecastActionID()
+
 	if screen.cancelEnablePlay != nil {
 		screen.cancelEnablePlay()
 	}
@@ -683,7 +702,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 
 	var mediaURL string
 	var mediaType string
-	var serverStoppedCTX context.Context
+	serverStoppedCTX := context.Background()
 
 	if screen.ExternalMediaURL.Checked {
 		mediaURL = screen.MediaText.Text
@@ -839,7 +858,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	// Use LIVE stream type for URL streams (DMR shows LIVE badge, but buffer unchanged)
 	go func() {
 		live := screen.ExternalMediaURL.Checked
-		if err := client.Load(mediaURL, mediaType, 0, 0, subtitleURL, live); err != nil {
+		if err := client.Load(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), 0, 0, subtitleURL, live); err != nil {
 			if !screen.isChromecastActionCurrent(actionID) {
 				return
 			}
@@ -854,7 +873,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 
 // chromecastStatusWatcher polls Chromecast status and updates UI.
 func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID uint64) {
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	var mediaStarted bool

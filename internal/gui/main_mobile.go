@@ -45,12 +45,11 @@ func newDeviceList(dd *[]devType) *deviceList {
 	}
 
 	list.CreateItem = func() fyne.CanvasObject {
-		intListCont := container.NewHBox(widget.NewIcon(theme.NavigateNextIcon()), widget.NewLabel(""))
-		return intListCont
+		return newDeviceRow(nil, nil)
 	}
 
 	list.UpdateItem = func(i widget.ListItemID, o fyne.CanvasObject) {
-		o.(*fyne.Container).Objects[1].(*widget.Label).SetText((*dd)[i].name)
+		o.(*deviceRow).setDevice((*dd)[i])
 	}
 
 	list.ExtendBaseWidget(list)
@@ -65,7 +64,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	// Avoid parallel execution of getDevices.
 	blockGetDevices := make(chan struct{})
 	go func() {
-		datanew, err := getDevices(1)
+		datanew, err := getDevices()
 		if err != nil {
 			datanew = nil
 		}
@@ -249,13 +248,13 @@ func refreshDevList(s *FyneScreen, data *[]devType) {
 
 	w := s.Current
 
-	_, err := getDevices(2)
+	_, err := getDevices()
 	if err != nil && !errors.Is(err, devices.ErrNoDeviceAvailable) {
 		check(w, err)
 	}
 
 	for range refreshDevices.C {
-		datanew, _ := getDevices(2)
+		datanew, _ := getDevices()
 
 		var oldDevices []devType
 		var selectedAddr string
@@ -337,7 +336,7 @@ func refreshDevList(s *FyneScreen, data *[]devType) {
 }
 
 func checkMutefunc(s *FyneScreen) {
-	checkMute := time.NewTicker(1 * time.Second)
+	checkMute := time.NewTicker(time.Second)
 
 	var checkMuteCounter int
 	for range checkMute.C {

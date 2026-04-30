@@ -132,9 +132,9 @@ func (p *FyneScreen) configureImageAutoSkipTimer(mediaType, mediaPath string) {
 			return
 		}
 
-		fyne.Do(func() {
-			skipNextAction(p)
-		})
+		// Image timeout should behave like natural media completion so queue
+		// wrap/same-type autoplay logic stays consistent.
+		p.Fini()
 	}(timerID, mediaPath, timeoutSeconds)
 }
 
