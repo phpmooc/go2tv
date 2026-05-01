@@ -66,10 +66,23 @@ func GetSubs(ffmpeg string, f string) ([]string, error) {
 		return nil, err
 	}
 
+	out, err := subtitleNames(info.Streams)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(out) == 0 {
+		return nil, ErrNoSubs
+	}
+
+	return out, nil
+}
+
+func subtitleNames(streams []streams) ([]string, error) {
 	out := make([]string, 0)
 
 	var subcounter int
-	for _, s := range info.Streams {
+	for _, s := range streams {
 		if s.CodecType == "subtitle" {
 			subcounter++
 			tag := &tags{}
@@ -78,8 +91,12 @@ func GetSubs(ffmpeg string, f string) ([]string, error) {
 			}
 
 			subName := tag.Title
-			if tag.Title == "" {
+
+			switch {
+			case tag.Title == "" && tag.Language != "":
 				subName = tag.Language
+			case tag.Language != "":
+				subName += " (" + tag.Language + ")"
 			}
 
 			if subName == "" {
@@ -88,10 +105,23 @@ func GetSubs(ffmpeg string, f string) ([]string, error) {
 
 			out = append(out, subName)
 		}
+
 	}
 
-	if len(out) == 0 {
-		return nil, ErrNoSubs
+	if len(out) > 1 {
+		reNumber := true
+		for _, s := range out {
+			if s != out[0] {
+				reNumber = false
+				break
+			}
+		}
+
+		if reNumber {
+			for i := range out {
+				out[i] = strconv.Itoa(i + 1)
+			}
+		}
 	}
 
 	return out, nil
