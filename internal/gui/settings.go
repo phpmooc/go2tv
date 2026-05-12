@@ -80,6 +80,12 @@ func newSettingsCheckboxField(control fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewPadded(control)
 }
 
+func (s *FyneScreen) setAutoPlaySameTypes(enabled bool) {
+	fyne.CurrentApp().Preferences().SetBool("AutoPlaySameTypes", enabled)
+	s.SkinNextOnlySameTypes = enabled
+	s.refreshTraversalControls()
+}
+
 func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 
 	w := s.Current
@@ -242,8 +248,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	dropdownTheme.Refresh()
 
 	sameTypeAutoNextCheck := widget.NewCheck(lang.L("Only Auto-Play Same File Types"), func(b bool) {
-		fyne.CurrentApp().Preferences().SetBool("AutoPlaySameTypes", b)
-		s.SkinNextOnlySameTypes = b
+		s.setAutoPlaySameTypes(b)
 	})
 
 	sameTypeAutoNextOption := fyne.CurrentApp().Preferences().BoolWithFallback("AutoPlaySameTypes", true)

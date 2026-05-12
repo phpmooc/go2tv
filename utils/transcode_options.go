@@ -2,9 +2,8 @@ package utils
 
 import (
 	"io"
+	"log/slog"
 	"sync"
-
-	"github.com/rs/zerolog"
 )
 
 // TranscodeOptions holds FFmpeg transcoding configuration for Chromecast.
@@ -43,7 +42,7 @@ type TranscodeOptions struct {
 	RawInput     *RawVideoInput
 
 	initLogOnce sync.Once
-	logger      zerolog.Logger
+	logger      *slog.Logger
 }
 
 // RawVideoInput describes a raw video stream piped to ffmpeg stdin.
@@ -61,7 +60,11 @@ func (t *TranscodeOptions) LogError(function, action string, err error) {
 		return
 	}
 	t.initLogOnce.Do(func() {
-		t.logger = zerolog.New(t.LogOutput).With().Timestamp().Logger()
+		t.logger = newJSONLogger(t.LogOutput)
 	})
-	t.logger.Error().Str("function", function).Str("Action", action).Err(err).Msg("")
+	t.logger.Error("", "function", function, "Action", action, "error", err)
+}
+
+func newJSONLogger(w io.Writer) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }

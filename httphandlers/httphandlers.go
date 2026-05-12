@@ -493,7 +493,7 @@ func serveContentReadClose(w http.ResponseWriter, r *http.Request, tv *soapcalls
 			// DLNA transcoding (MPEGTS)
 			err := utils.ServeTranscodedStream(r.Context(), w, f, ff, tv.FFmpegPath, tv.FFmpegSubsPath, tv.FFmpegSeek, utils.SubtitleSizeMedium)
 			if err != nil {
-				tv.Log().Error().Str("function", "serveContentReadClose").Str("Action", "Transcode").Err(err).Msg("")
+				tv.Log().Error("", "function", "serveContentReadClose", "Action", "Transcode", "error", err)
 			}
 		}
 		return
@@ -549,7 +549,7 @@ func serveContentCustomType(w http.ResponseWriter, r *http.Request, tv *soapcall
 			// DLNA transcoding (MPEGTS)
 			err := utils.ServeTranscodedStream(r.Context(), w, input, ff, tv.FFmpegPath, tv.FFmpegSubsPath, tv.FFmpegSeek, utils.SubtitleSizeMedium)
 			if err != nil {
-				tv.Log().Error().Str("function", "serveContentCustomType").Str("Action", "Transcode").Err(err).Msg("")
+				tv.Log().Error("", "function", "serveContentCustomType", "Action", "Transcode", "error", err)
 			}
 		}
 		return

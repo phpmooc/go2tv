@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/url"
 	"path"
@@ -13,10 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog"
 	"go2tv.app/go2tv/v2/castprotocol/v2/application"
 	"go2tv.app/go2tv/v2/castprotocol/v2/cast"
 )
+
+var discardLogger = newJSONLogger(io.Discard)
 
 // CastClient wraps go-chromecast Application for simplified API
 type CastClient struct {
@@ -26,20 +28,27 @@ type CastClient struct {
 	host        string
 	port        int
 	connected   bool
-	Logger      zerolog.Logger
+	Logger      *slog.Logger
 	LogOutput   io.Writer
 	initLogOnce sync.Once
 }
 
-// Log returns the zerolog logger, initializing it lazily if LogOutput is set.
+// Log returns the slog logger, initializing it lazily if LogOutput is set.
 // Same pattern as TVPayload.Log() in soapcalls/soapcallers.go.
-func (c *CastClient) Log() *zerolog.Logger {
+func (c *CastClient) Log() *slog.Logger {
 	if c.LogOutput != nil {
 		c.initLogOnce.Do(func() {
-			c.Logger = zerolog.New(c.LogOutput).With().Timestamp().Logger()
+			c.Logger = newJSONLogger(c.LogOutput)
 		})
 	}
-	return &c.Logger
+	if c.Logger == nil {
+		return discardLogger
+	}
+	return c.Logger
+}
+
+func newJSONLogger(w io.Writer) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
 func NewCastClient(deviceAddr string) (*CastClient, error) {
@@ -81,13 +90,13 @@ func (c *CastClient) Connect() error {
 		return fmt.Errorf("chromecast connect: app is nil")
 	}
 
-	c.Log().Debug().Str("Method", "Connect").Str("Host", c.host).Int("Port", c.port).Msg("connecting")
+	c.Log().Debug("connecting", "Method", "Connect", "Host", c.host, "Port", c.port)
 	if err := c.app.Start(c.host, c.port); err != nil {
-		c.Log().Error().Str("Method", "Connect").Err(err).Msg("connection failed")
+		c.Log().Error("connection failed", "Method", "Connect", "error", err)
 		return fmt.Errorf("chromecast connect: %w", err)
 	}
 	c.connected = true
-	c.Log().Debug().Str("Method", "Connect").Msg("connected successfully")
+	c.Log().Debug("connected successfully", "Method", "Connect")
 	return nil
 }
 
@@ -159,41 +168,41 @@ func (c *CastClient) ensureDefaultReceiverReady() error {
 	var lastErr error
 	for attempt := range 5 {
 		if !c.IsConnected() {
-			c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during receiver launch, aborting silently")
+			c.Log().Debug("connection closed during receiver launch, aborting silently", "Method", "ensureDefaultReceiverReady")
 			return nil
 		}
 
-		c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", attempt+1).Msg("launching default receiver")
+		c.Log().Debug("launching default receiver", "Method", "ensureDefaultReceiverReady", "Attempt", attempt+1)
 		if err := LaunchDefaultReceiver(c.conn); err != nil {
 			lastErr = err
 			if isTimeoutError(err) && attempt < 4 {
-				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", attempt+1).Err(err).Msg("timeout, TV may be waking up, retrying...")
+				c.Log().Debug("timeout, TV may be waking up, retrying...", "Method", "ensureDefaultReceiverReady", "Attempt", attempt+1, "error", err)
 				if !c.IsConnected() {
-					c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during retry wait, aborting silently")
+					c.Log().Debug("connection closed during retry wait, aborting silently", "Method", "ensureDefaultReceiverReady")
 					return nil
 				}
 				time.Sleep(4 * time.Second)
 				continue
 			}
-			c.Log().Error().Str("Method", "ensureDefaultReceiverReady").Err(err).Msg("launch receiver failed")
+			c.Log().Error("launch receiver failed", "Method", "ensureDefaultReceiverReady", "error", err)
 			return fmt.Errorf("launch receiver: %w", err)
 		}
 
 		for i := range 8 {
 			if !c.IsConnected() {
-				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during app update, aborting silently")
+				c.Log().Debug("connection closed during app update, aborting silently", "Method", "ensureDefaultReceiverReady")
 				return nil
 			}
 
 			if err := c.app.Update(); err != nil {
 				lastErr = err
-				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", i+1).Err(err).Msg("app.Update retry")
+				c.Log().Debug("app.Update retry", "Method", "ensureDefaultReceiverReady", "Attempt", i+1, "error", err)
 				time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
 				continue
 			}
 
 			if c.defaultReceiverReady() {
-				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Str("TransportId", c.app.App().TransportId).Msg("default receiver ready")
+				c.Log().Debug("default receiver ready", "Method", "ensureDefaultReceiverReady", "TransportId", c.app.App().TransportId)
 				return nil
 			}
 
@@ -202,9 +211,9 @@ func (c *CastClient) ensureDefaultReceiverReady() error {
 		}
 
 		if attempt < 4 {
-			c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Int("Attempt", attempt+1).Msg("receiver not ready, retrying...")
+			c.Log().Debug("receiver not ready, retrying...", "Method", "ensureDefaultReceiverReady", "Attempt", attempt+1)
 			if !c.IsConnected() {
-				c.Log().Debug().Str("Method", "ensureDefaultReceiverReady").Msg("connection closed during retry wait, aborting silently")
+				c.Log().Debug("connection closed during retry wait, aborting silently", "Method", "ensureDefaultReceiverReady")
 				return nil
 			}
 			time.Sleep(4 * time.Second)
@@ -216,7 +225,7 @@ func (c *CastClient) ensureDefaultReceiverReady() error {
 		lastErr = fmt.Errorf("failed to get default receiver transport ID after retries")
 	}
 
-	c.Log().Error().Str("Method", "ensureDefaultReceiverReady").Err(lastErr).Msg("failed to launch default receiver")
+	c.Log().Error("failed to launch default receiver", "Method", "ensureDefaultReceiverReady", "error", lastErr)
 	return lastErr
 }
 
@@ -227,12 +236,12 @@ func (c *CastClient) ensureDefaultReceiverReady() error {
 // If live is true, uses StreamType "LIVE" to identify as live stream.
 func (c *CastClient) Load(mediaURL string, contentType string, title string, startTime int, duration float64, subtitleURL string, live bool) error {
 	mediaTitle := normalizeMediaTitle(title, mediaURL)
-	c.Log().Debug().Str("Method", "Load").Str("URL", mediaURL).Str("ContentType", contentType).Str("Title", mediaTitle).Int("StartTime", startTime).Float64("Duration", duration).Bool("HasSubs", subtitleURL != "").Bool("Live", live).Msg("loading media")
+	c.Log().Debug("loading media", "Method", "Load", "URL", mediaURL, "ContentType", contentType, "Title", mediaTitle, "StartTime", startTime, "Duration", duration, "HasSubs", subtitleURL != "", "Live", live)
 
 	// Check if connection is still active, reconnect if needed
 	// This handles cases where Close() was called but the client is being reused
 	if !c.IsConnected() {
-		c.Log().Debug().Str("Method", "Load").Msg("connection closed, reconnecting")
+		c.Log().Debug("connection closed, reconnecting", "Method", "Load")
 		if err := c.Connect(); err != nil {
 			return fmt.Errorf("reconnect before load: %w", err)
 		}
@@ -246,24 +255,24 @@ func (c *CastClient) Load(mediaURL string, contentType string, title string, sta
 		var lastErr error
 		for attempt := range 5 {
 			if !c.IsConnected() {
-				c.Log().Debug().Str("Method", "Load").Msg("connection closed during load, aborting silently")
+				c.Log().Debug("connection closed during load, aborting silently", "Method", "Load")
 				return nil
 			}
 			if err := c.app.Load(mediaURL, startTime, contentType, false, false, false); err != nil {
 				lastErr = err
 				if isTimeoutError(err) && attempt < 5 {
-					c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Err(err).Msg("timeout, TV may be waking up, retrying...")
+					c.Log().Debug("timeout, TV may be waking up, retrying...", "Method", "Load", "Attempt", attempt, "error", err)
 					if !c.IsConnected() {
-						c.Log().Debug().Str("Method", "Load").Msg("connection closed during retry wait, aborting silently")
+						c.Log().Debug("connection closed during retry wait, aborting silently", "Method", "Load")
 						return nil
 					}
 					time.Sleep(4 * time.Second) // Wait for TV to wake up
 					continue
 				}
-				c.Log().Error().Str("Method", "Load").Err(err).Msg("standard load failed")
+				c.Log().Error("standard load failed", "Method", "Load", "error", err)
 				return err
 			}
-			c.Log().Debug().Str("Method", "Load").Msg("standard load success")
+			c.Log().Debug("standard load success", "Method", "Load")
 			return nil
 		}
 		return lastErr
@@ -279,7 +288,7 @@ func (c *CastClient) Load(mediaURL string, contentType string, title string, sta
 	var lastErr error
 	for attempt := range 5 {
 		if !c.IsConnected() {
-			c.Log().Debug().Str("Method", "Load").Msg("connection closed during load, aborting silently")
+			c.Log().Debug("connection closed during load, aborting silently", "Method", "Load")
 			return nil
 		}
 
@@ -292,15 +301,15 @@ func (c *CastClient) Load(mediaURL string, contentType string, title string, sta
 		if transportId == "" {
 			lastErr = fmt.Errorf("failed to get transport ID after receiver launch")
 			if attempt < 4 {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt+1).Msg("no transport ID, retrying...")
+				c.Log().Debug("no transport ID, retrying...", "Method", "Load", "Attempt", attempt+1)
 				if !c.IsConnected() {
-					c.Log().Debug().Str("Method", "Load").Msg("connection closed during retry wait, aborting silently")
+					c.Log().Debug("connection closed during retry wait, aborting silently", "Method", "Load")
 					return nil
 				}
 				time.Sleep(4 * time.Second)
 				continue
 			}
-			c.Log().Error().Str("Method", "Load").Err(lastErr).Msg("failed to get transport ID")
+			c.Log().Error("failed to get transport ID", "Method", "Load", "error", lastErr)
 			return lastErr
 		}
 
@@ -311,22 +320,22 @@ func (c *CastClient) Load(mediaURL string, contentType string, title string, sta
 		if err != nil {
 			lastErr = err
 			if isTimeoutError(err) && attempt < 5 {
-				c.Log().Debug().Str("Method", "Load").Int("Attempt", attempt).Err(err).Msg("timeout, TV may be waking up, retrying...")
+				c.Log().Debug("timeout, TV may be waking up, retrying...", "Method", "Load", "Attempt", attempt, "error", err)
 				if !c.IsConnected() {
-					c.Log().Debug().Str("Method", "Load").Msg("connection closed during retry wait, aborting silently")
+					c.Log().Debug("connection closed during retry wait, aborting silently", "Method", "Load")
 					return nil
 				}
 				time.Sleep(4 * time.Second)
 				continue
 			}
-			c.Log().Error().Str("Method", "Load").Err(err).Msg("LoadWithSubtitles failed")
+			c.Log().Error("LoadWithSubtitles failed", "Method", "Load", "error", err)
 			return err
 		}
 
 		// For live streams: immediately send PLAY command after loading paused
 		// This "fast play" behavior avoids the aggressive buffering that autoplay=true causes
 		if live {
-			c.Log().Debug().Str("Method", "Load").Msg("live stream loaded paused, sending immediate PLAY to simulate fast click")
+			c.Log().Debug("live stream loaded paused, sending immediate PLAY to simulate fast click", "Method", "Load")
 			var playErr error
 			for i := range 3 {
 				// Refresh app state to get the mediaSessionId from LOAD response.
@@ -342,17 +351,17 @@ func (c *CastClient) Load(mediaURL string, contentType string, title string, sta
 				// 2. app.Unpause() uses that stored session id.
 				playErr = c.app.Unpause()
 				if playErr == nil {
-					c.Log().Debug().Str("Method", "Load").Int("Attempt", i+1).Msg("play command sent successfully")
+					c.Log().Debug("play command sent successfully", "Method", "Load", "Attempt", i+1)
 					break
 				}
 				time.Sleep(time.Duration(i+1) * 200 * time.Millisecond)
 			}
 			if playErr != nil {
-				c.Log().Warn().Str("Method", "Load").Err(playErr).Msg("play command failed after retries")
+				c.Log().Warn("play command failed after retries", "Method", "Load", "error", playErr)
 			}
 		}
 
-		c.Log().Debug().Str("Method", "Load").Msg("load with subtitles/duration success")
+		c.Log().Debug("load with subtitles/duration success", "Method", "Load")
 		return nil
 	}
 	return lastErr
@@ -364,7 +373,7 @@ func (c *CastClient) Load(mediaURL string, contentType string, title string, sta
 // If live is true, uses StreamType "LIVE" to identify as live stream.
 func (c *CastClient) LoadOnExisting(mediaURL string, contentType string, title string, startTime int, duration float64, subtitleURL string, live bool) error {
 	mediaTitle := normalizeMediaTitle(title, mediaURL)
-	c.Log().Debug().Str("Method", "LoadOnExisting").Str("URL", mediaURL).Str("ContentType", contentType).Str("Title", mediaTitle).Int("StartTime", startTime).Float64("Duration", duration).Bool("HasSubs", subtitleURL != "").Bool("Live", live).Msg("loading media on existing receiver")
+	c.Log().Debug("loading media on existing receiver", "Method", "LoadOnExisting", "URL", mediaURL, "ContentType", contentType, "Title", mediaTitle, "StartTime", startTime, "Duration", duration, "HasSubs", subtitleURL != "", "Live", live)
 
 	// LoadOnExisting requires an active connection (it's designed for already-running receivers)
 	// Unlike Load(), we don't auto-reconnect because that would defeat the optimization purpose
@@ -376,19 +385,19 @@ func (c *CastClient) LoadOnExisting(mediaURL string, contentType string, title s
 	var transportId string
 	for i := range 5 {
 		if !c.IsConnected() {
-			c.Log().Debug().Str("Method", "LoadOnExisting").Msg("connection closed during app update, aborting silently")
+			c.Log().Debug("connection closed during app update, aborting silently", "Method", "LoadOnExisting")
 			return nil
 		}
 
 		if err := c.app.Update(); err != nil {
-			c.Log().Debug().Str("Method", "LoadOnExisting").Int("Attempt", i+1).Err(err).Msg("app.Update retry")
+			c.Log().Debug("app.Update retry", "Method", "LoadOnExisting", "Attempt", i+1, "error", err)
 			time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
 			continue
 		}
 		app := c.app.App()
 		if app != nil && app.TransportId != "" {
 			transportId = app.TransportId
-			c.Log().Debug().Str("Method", "LoadOnExisting").Str("TransportId", transportId).Msg("got transport ID")
+			c.Log().Debug("got transport ID", "Method", "LoadOnExisting", "TransportId", transportId)
 			break
 		}
 		time.Sleep(time.Duration(i+1) * 500 * time.Millisecond)
@@ -397,9 +406,9 @@ func (c *CastClient) LoadOnExisting(mediaURL string, contentType string, title s
 	// For LoadOnExisting, always autoplay since it's for seek operations on active content
 	err := LoadWithSubtitles(c.conn, transportId, mediaURL, contentType, startTime, duration, subtitleURL, mediaTitle, live, true)
 	if err != nil {
-		c.Log().Error().Str("Method", "LoadOnExisting").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "LoadOnExisting", "error", err)
 	} else {
-		c.Log().Debug().Str("Method", "LoadOnExisting").Msg("success")
+		c.Log().Debug("success", "Method", "LoadOnExisting")
 	}
 	return err
 }
@@ -408,10 +417,10 @@ func (c *CastClient) LoadOnExisting(mediaURL string, contentType string, title s
 func (c *CastClient) Play() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Log().Debug().Str("Method", "Play").Msg("resuming playback")
+	c.Log().Debug("resuming playback", "Method", "Play")
 	err := c.app.Unpause()
 	if err != nil {
-		c.Log().Error().Str("Method", "Play").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "Play", "error", err)
 	}
 	return err
 }
@@ -420,10 +429,10 @@ func (c *CastClient) Play() error {
 func (c *CastClient) Pause() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Log().Debug().Str("Method", "Pause").Msg("pausing playback")
+	c.Log().Debug("pausing playback", "Method", "Pause")
 	err := c.app.Pause()
 	if err != nil {
-		c.Log().Error().Str("Method", "Pause").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "Pause", "error", err)
 	}
 	return err
 }
@@ -432,10 +441,10 @@ func (c *CastClient) Pause() error {
 func (c *CastClient) Stop() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Log().Debug().Str("Method", "Stop").Msg("stopping playback")
+	c.Log().Debug("stopping playback", "Method", "Stop")
 	err := c.app.Stop()
 	if err != nil {
-		c.Log().Error().Str("Method", "Stop").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "Stop", "error", err)
 	}
 	return err
 }
@@ -444,10 +453,10 @@ func (c *CastClient) Stop() error {
 func (c *CastClient) Seek(seconds int) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Log().Debug().Str("Method", "Seek").Int("Seconds", seconds).Msg("seeking")
+	c.Log().Debug("seeking", "Method", "Seek", "Seconds", seconds)
 	err := c.app.SeekFromStart(seconds)
 	if err != nil {
-		c.Log().Error().Str("Method", "Seek").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "Seek", "error", err)
 	}
 	return err
 }
@@ -456,10 +465,10 @@ func (c *CastClient) Seek(seconds int) error {
 func (c *CastClient) SetVolume(level float32) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Log().Debug().Str("Method", "SetVolume").Float32("Level", level).Msg("setting volume")
+	c.Log().Debug("setting volume", "Method", "SetVolume", "Level", level)
 	err := c.app.SetVolume(level)
 	if err != nil {
-		c.Log().Error().Str("Method", "SetVolume").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "SetVolume", "error", err)
 	}
 	return err
 }
@@ -468,10 +477,10 @@ func (c *CastClient) SetVolume(level float32) error {
 func (c *CastClient) SetMuted(muted bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Log().Debug().Str("Method", "SetMuted").Bool("Muted", muted).Msg("setting mute")
+	c.Log().Debug("setting mute", "Method", "SetMuted", "Muted", muted)
 	err := c.app.SetMuted(muted)
 	if err != nil {
-		c.Log().Error().Str("Method", "SetMuted").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "SetMuted", "error", err)
 	}
 	return err
 }
@@ -481,7 +490,7 @@ func (c *CastClient) SetMuted(muted bool) error {
 func (c *CastClient) GetStatus() (*CastStatus, error) {
 	// Request fresh status from device (Update refreshes the cached status)
 	if err := c.app.Update(); err != nil {
-		c.Log().Error().Str("Method", "GetStatus").Err(err).Msg("app.Update failed")
+		c.Log().Error("app.Update failed", "Method", "GetStatus", "error", err)
 		return nil, err
 	}
 	_, media, vol := c.app.Status()
@@ -509,11 +518,11 @@ func (c *CastClient) Close(stopMedia bool) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.Log().Debug().Str("Method", "Close").Bool("StopMedia", stopMedia).Msg("closing connection")
+	c.Log().Debug("closing connection", "Method", "Close", "StopMedia", stopMedia)
 	c.connected = false
 	err := c.app.Close(stopMedia)
 	if err != nil {
-		c.Log().Error().Str("Method", "Close").Err(err).Msg("failed")
+		c.Log().Error("failed", "Method", "Close", "error", err)
 	}
 	return err
 }

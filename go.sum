@@ -8,8 +8,6 @@ github.com/alexballas/fyne/v2 v2.3.3-0.20260214003640-c68aed308565 h1:Fxtg5GWDmG
 github.com/alexballas/fyne/v2 v2.3.3-0.20260214003640-c68aed308565/go.mod h1:li9jHss2gw1/bXQVx7jlZu4gCNBuT7zIAIvvYAzeRxE=
 github.com/alexballas/go-ssdp v0.0.3 h1:wTtHib45NtrkYZ/saCaB/2qJ9ci6EWeQFl6imaW4gPg=
 github.com/alexballas/go-ssdp v0.0.3/go.mod h1:jUwvJl32BZxBQiRbW5Q0h1QrDGMuA+HRg5qTQvIquJE=
-github.com/alexballas/xfilepicker v0.0.0-20260325155423-826412aa6467 h1:+knDVmnYONYbmoEZ2yv+gDP0QdJqAKt7oPJYe+RAqHs=
-github.com/alexballas/xfilepicker v0.0.0-20260325155423-826412aa6467/go.mod h1:3iVlb7BjvPrChA4y5VhJ4+C7rW08csLbAQCMp45kU/M=
 github.com/alexballas/xfilepicker v0.0.0-20260427220638-78f6865a771e h1:8ZETclk6/Zb/Y6tCZIMjMk46XawgJgWLz697SPjH19o=
 github.com/alexballas/xfilepicker v0.0.0-20260427220638-78f6865a771e/go.mod h1:3iVlb7BjvPrChA4y5VhJ4+C7rW08csLbAQCMp45kU/M=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
@@ -105,8 +103,6 @@ github.com/lucasb-eyer/go-colorful v1.4.0 h1:UtrWVfLdarDgc44HcS7pYloGHJUjHV/4FwW
 github.com/lucasb-eyer/go-colorful v1.4.0/go.mod h1:R4dSotOR9KMtayYi1e77YzuveK+i7ruzyGqttikkLy0=
 github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=
 github.com/mattn/go-colorable v0.1.14/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=
-github.com/mattn/go-isatty v0.0.21 h1:xYae+lCNBP7QuW4PUnNG61ffM4hVIfm+zUzDuSzYLGs=
-github.com/mattn/go-isatty v0.0.21/go.mod h1:ZXfXG4SQHsB/w3ZeOYbR0PrPwLy+n6xiMrJlRFqopa4=
 github.com/mattn/go-isatty v0.0.22 h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw4=
 github.com/mattn/go-isatty v0.0.22/go.mod h1:ZXfXG4SQHsB/w3ZeOYbR0PrPwLy+n6xiMrJlRFqopa4=
 github.com/mattn/go-localereader v0.0.1 h1:ygSAOl7ZXTx4RdPYinUpg6W99U8jWvWi9Ye2JC/oIi4=
@@ -138,8 +134,6 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
-github.com/rs/zerolog v1.35.1 h1:m7xQeoiLIiV0BCEY4Hs+j2NG4Gp2o2KPKmhnnLiazKI=
-github.com/rs/zerolog v1.35.1/go.mod h1:EjML9kdfa/RMA7h/6z6pYmq1ykOuA8/mjWaEvGI+jcw=
 github.com/rymdport/portal v0.4.2 h1:7jKRSemwlTyVHHrTGgQg7gmNPJs88xkbKcIL3NlcmSU=
 github.com/rymdport/portal v0.4.2/go.mod h1:kFF4jslnJ8pD5uCi17brj/ODlfIidOxlgUDTO5ncnC4=
 github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d h1:hrujxIzL1woJ7AwssoOcM/tq5JjjG2yYOc8odClEiXA=

@@ -688,7 +688,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			return
 		}
 
-		// Note: Debug logging disabled on mobile - zerolog crashes on Android
+		// Note: Debug logging disabled on mobile.
 		// client.LogOutput = screen.Debug
 
 		if err := client.Connect(); err != nil {

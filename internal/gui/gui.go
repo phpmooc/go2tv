@@ -443,13 +443,11 @@ func getAdjacentQueuedMedia(screen *FyneScreen, delta int, wrap bool) (string, s
 		return "", "", errors.New(lang.L("queue is empty"))
 	}
 
-	if queue.CurrentIndex < 0 || queue.CurrentIndex >= len(queue.Items) {
-		currentIndex := queue.indexByPath(screen.mediafile)
-		if currentIndex == -1 {
-			return "", "", errors.New(lang.L("current media file is not in the queue"))
-		}
-		queue.CurrentIndex = currentIndex
+	currentIndex := queue.indexByPath(screen.mediafile)
+	if currentIndex == -1 {
+		return "", "", errors.New(lang.L("current media file is not in the queue"))
 	}
+	queue.CurrentIndex = currentIndex
 
 	nextIndex := queue.adjacentIndex(delta, screen.SkinNextOnlySameTypes, wrap)
 	if nextIndex == -1 {
