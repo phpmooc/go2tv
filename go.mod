@@ -3,14 +3,14 @@ module go2tv.app/go2tv/v2
 go 1.25.0
 
 require (
-	fyne.io/fyne/v2 v2.7.3
-	github.com/alexballas/go-ssdp v0.0.3
-	github.com/alexballas/xfilepicker v0.0.0-20260427220638-78f6865a771e
-	github.com/buger/jsonparser v1.1.2
+	fyne.io/fyne/v2 v2.7.4
+	github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab
+	github.com/alexballas/xfilepicker v0.0.0-20260526234855-c366c0882734
+	github.com/buger/jsonparser v1.2.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/dweymouth/fyne-tooltip v0.4.0
-	github.com/gdamore/tcell/v2 v2.13.9
+	github.com/gdamore/tcell/v2 v2.13.10
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/h2non/filetype v1.1.3
@@ -24,13 +24,13 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/stretchr/testify v1.11.1
 	go2tv.app/screencast v0.0.0-20260415182719-6f13c7343d9c
-	golang.org/x/mod v0.35.0
+	golang.org/x/mod v0.36.0
 	golang.org/x/time v0.15.0
-	gopkg.in/ini.v1 v1.67.1
+	gopkg.in/ini.v1 v1.67.2
 )
 
 require (
-	fyne.io/systray v1.12.0 // indirect
+	fyne.io/systray v1.12.1 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
@@ -43,8 +43,8 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/fredbi/uri v1.1.1 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/fyne-io/gl-js v0.2.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
+	github.com/fyne-io/gl-js v0.2.1-0.20260315212741-029c47fd27e8 // indirect
 	github.com/fyne-io/glfw-js v0.3.0 // indirect
 	github.com/fyne-io/image v0.1.1 // indirect
 	github.com/fyne-io/oksvg v0.2.0 // indirect
@@ -77,14 +77,14 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
-	golang.org/x/image v0.39.0 // indirect
-	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/image v0.41.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/term v0.42.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.45.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace fyne.io/fyne/v2 => github.com/alexballas/fyne/v2 v2.3.3-0.20260214003640-c68aed308565
+replace fyne.io/fyne/v2 => github.com/alexballas/fyne/v2 v2.3.3-0.20260526231825-b13c11ed97ce
