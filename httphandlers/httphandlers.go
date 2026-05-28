@@ -427,6 +427,13 @@ func serveContent(w http.ResponseWriter, r *http.Request, tv *soapcalls.TVPayloa
 	switch f := mf.(type) {
 	case osFileType:
 		serveContentCustomType(w, r, tv, tcOpts, mediaType, transcode, seek, f, ff)
+	case MediaReaderSeeker:
+		rsc, err := f()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		serveContentSeekCloser(w, r, mediaType, seek, rsc)
 	case []byte:
 		serveContentBytes(w, r, mediaType, f)
 	case io.ReadCloser:
@@ -502,6 +509,37 @@ func serveContentReadClose(w http.ResponseWriter, r *http.Request, tv *soapcalls
 	if r.Method == http.MethodGet {
 		_, _ = io.Copy(w, f)
 	}
+}
+
+// MediaReaderSeeker returns a fresh seekable reader for the media on each call.
+// It is used on mobile, where a content:// URI can provide a seekable file
+// descriptor (via refyne storage.ReaderSeeker) but a new descriptor must be
+// opened per HTTP request, since each request has its own read offset.
+type MediaReaderSeeker func() (io.ReadSeekCloser, error)
+
+// serveContentSeekCloser serves a seekable reader directly via
+// http.ServeContent, giving full HTTP range-request support without copying the
+// media to a temporary file. The reader is closed once the request completes.
+func serveContentSeekCloser(w http.ResponseWriter, r *http.Request, mediaType string, seek bool, f io.ReadSeekCloser) {
+	defer f.Close()
+
+	if r.Header.Get("getcontentFeatures.dlna.org") == "1" {
+		seekflag := "00"
+		if seek {
+			seekflag = "01"
+		}
+
+		contentFeatures, err := utils.BuildContentFeatures(mediaType, seekflag, false)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.Header()["contentFeatures.dlna.org"] = []string{contentFeatures}
+	}
+
+	name := strings.TrimLeft(r.URL.Path, "/")
+	http.ServeContent(w, r, name, time.Now(), f)
 }
 
 func serveContentCustomType(w http.ResponseWriter, r *http.Request, tv *soapcalls.TVPayload, tcOpts *utils.TranscodeOptions, mediaType string, transcode, seek bool, f osFileType, ff *exec.Cmd) {

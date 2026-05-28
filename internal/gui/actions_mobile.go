@@ -17,6 +17,7 @@ import (
 	"github.com/alexballas/refyne/v2/dialog"
 	"github.com/alexballas/refyne/v2/lang"
 	"github.com/alexballas/refyne/v2/storage"
+	"github.com/alexballas/refyne/v2/storage/repository"
 	"github.com/alexballas/refyne/v2/theme"
 	"github.com/pkg/errors"
 	"go2tv.app/go2tv/v2/castprotocol"
@@ -320,9 +321,10 @@ func playAction(screen *FyneScreen) {
 	}
 
 	if screen.mediafile != nil {
-		// On Android/iOS, Fyne storage only provides io.ReadCloser which doesn't support seeking.
-		// http.ServeContent requires io.ReadSeeker for range requests (video seeking).
-		// Solution: Copy file content to a temp file that we can use with os.File.
+		// http.ServeContent needs an io.ReadSeeker for range requests. We try
+		// storage.ReaderSeeker first (a real seekable handle, no copy) and fall
+		// back to a temp file copy when the platform can't provide one. See
+		// seekableMediaForCasting.
 		mediaURLinfo, err := storage.Reader(screen.mediafile)
 		check(screen.Current, err)
 		if err != nil {
@@ -357,37 +359,14 @@ func playAction(screen *FyneScreen) {
 			}
 			mediaFile = readerToBytes
 		} else {
-			// Video/Audio: copy to temp file for seeking support
-			mediaReader, err := storage.Reader(screen.mediafile)
+			// Video/Audio: serve a seekable reader directly when possible,
+			// falling back to a temp file copy otherwise.
+			mediaFile, err = seekableMediaForCasting(screen)
 			if err != nil {
 				check(w, err)
 				startAfreshPlayButton(screen)
 				return
 			}
-
-			ext := filepath.Ext(screen.MediaText.Text)
-			tempFile, err := os.CreateTemp("", "go2tv-*"+ext)
-			if err != nil {
-				mediaReader.Close()
-				check(w, fmt.Errorf("temp file create: %w", err))
-				startAfreshPlayButton(screen)
-				return
-			}
-
-			if _, err := io.Copy(tempFile, mediaReader); err != nil {
-				mediaReader.Close()
-				tempFile.Close()
-				os.Remove(tempFile.Name())
-				check(w, fmt.Errorf("temp file copy: %w", err))
-				startAfreshPlayButton(screen)
-				return
-			}
-			mediaReader.Close()
-			tempFile.Close()
-
-			// Store for cleanup in stopAction and use path for serving
-			screen.tempMediaFile = tempFile.Name()
-			mediaFile = screen.tempMediaFile
 		}
 	}
 
@@ -623,6 +602,51 @@ func volumeAction(screen *FyneScreen, up bool) {
 	}()
 }
 
+// seekableMediaForCasting returns a value for the HTTP server's media handler.
+// When the platform can provide a real seekable handle (e.g. an Android
+// content:// file descriptor via storage.ReaderSeeker), it returns a factory
+// that opens a fresh seekable reader per request, so http.ServeContent can
+// satisfy range requests without copying the file. Otherwise it falls back to
+// copying the media to a temp file (recorded in screen.tempMediaFile for
+// cleanup in stopAction) and returns that path.
+func seekableMediaForCasting(screen *FyneScreen) (any, error) {
+	uri := screen.mediafile
+
+	// Fast path: a real seekable handle is available. Probe once, then open a
+	// fresh reader per request (each HTTP request needs its own read offset).
+	if rs, err := storage.ReaderSeeker(uri); err == nil {
+		rs.Close()
+		return httphandlers.MediaReaderSeeker(func() (io.ReadSeekCloser, error) {
+			return storage.ReaderSeeker(uri)
+		}), nil
+	} else if !errors.Is(err, repository.ErrOperationNotSupported) {
+		return nil, err
+	}
+
+	// Fallback: copy to a temp file we can serve as a seekable os.File.
+	mediaReader, err := storage.Reader(uri)
+	if err != nil {
+		return nil, err
+	}
+	defer mediaReader.Close()
+
+	ext := filepath.Ext(screen.MediaText.Text)
+	tempFile, err := os.CreateTemp("", "go2tv-*"+ext)
+	if err != nil {
+		return nil, fmt.Errorf("temp file create: %w", err)
+	}
+
+	if _, err := io.Copy(tempFile, mediaReader); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return nil, fmt.Errorf("temp file copy: %w", err)
+	}
+	tempFile.Close()
+
+	screen.tempMediaFile = tempFile.Name()
+	return screen.tempMediaFile, nil
+}
+
 func startAfreshPlayButton(screen *FyneScreen) {
 	screen.nextChromecastActionID()
 
@@ -727,10 +751,10 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		go func() { <-serverStoppedCTX.Done(); cancel() }()
 
 	} else {
-		// LOCAL FILE: Serve via internal HTTP server
-		// On Android/iOS, Fyne storage only provides io.ReadCloser which doesn't support seeking.
-		// http.ServeContent requires io.ReadSeeker for range requests (video seeking).
-		// Solution: Copy file content to a temp file that we can use with os.File.
+		// LOCAL FILE: Serve via internal HTTP server.
+		// http.ServeContent needs an io.ReadSeeker for range requests; we serve
+		// a seekable reader directly when available and fall back to a temp file
+		// copy otherwise (see seekableMediaForCasting).
 		mediaReader, err := storage.Reader(screen.mediafile)
 		if err != nil {
 			check(w, err)
@@ -769,51 +793,25 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		screen.serverStopCTX = serverStoppedCTX
 		screen.cancelServerStop = serverCTXStop
 
-		// Get media reader for copying to temp file
-		mediaFile, err := storage.Reader(screen.mediafile)
+		// Serve a seekable reader directly when possible, falling back to a
+		// temp file copy otherwise (cleaned up via screen.tempMediaFile).
+		media, err := seekableMediaForCasting(screen)
 		if err != nil {
 			check(w, err)
 			startAfreshPlayButton(screen)
 			return
 		}
 
-		// Copy to temp file for http.ServeContent (needs io.ReadSeeker)
-		ext := filepath.Ext(screen.MediaText.Text)
-		tempFile, err := os.CreateTemp("", "go2tv-*"+ext)
-		if err != nil {
-			mediaFile.Close()
-			check(w, fmt.Errorf("temp file create: %w", err))
-			startAfreshPlayButton(screen)
-			return
-		}
-
-		if _, err := io.Copy(tempFile, mediaFile); err != nil {
-			mediaFile.Close()
-			tempFile.Close()
-			os.Remove(tempFile.Name())
-			check(w, fmt.Errorf("temp file copy: %w", err))
-			startAfreshPlayButton(screen)
-			return
-		}
-		mediaFile.Close()
-		tempFile.Close()
-
-		tempFilePath := tempFile.Name()
-
-		// Add media handler with temp file path (string type triggers os.Open in handler)
 		mediaFilename := "/" + utils.ConvertFilename(screen.MediaText.Text)
-		screen.httpserver.AddHandler(mediaFilename, nil, nil, tempFilePath)
+		screen.httpserver.AddHandler(mediaFilename, nil, nil, media)
 
 		serverStarted := make(chan error)
 		go func() {
 			screen.httpserver.StartServing(serverStarted)
-			// Clean up temp file when server stops
-			os.Remove(tempFilePath)
 			serverCTXStop()
 		}()
 
 		if err := <-serverStarted; err != nil {
-			os.Remove(tempFilePath)
 			check(w, err)
 			startAfreshPlayButton(screen)
 			return
