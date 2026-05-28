@@ -3,8 +3,8 @@ package gui
 import (
 	"image/color"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/theme"
 )
 
 type go2tvTheme struct {

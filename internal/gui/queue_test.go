@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/test"
+	"github.com/alexballas/refyne/v2/widget"
 )
 
 func newTraversalTestScreen(t *testing.T, currentPath string) *FyneScreen {

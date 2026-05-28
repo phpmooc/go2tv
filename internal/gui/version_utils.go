@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"fyne.io/fyne/v2"
+	"github.com/alexballas/refyne/v2"
 	"golang.org/x/mod/semver"
 )
 

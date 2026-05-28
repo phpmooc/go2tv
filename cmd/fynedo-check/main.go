@@ -538,7 +538,7 @@ func collectImportInfo(file *ast.File) (map[string]bool, map[string]bool, bool) 
 			importAliases[alias] = true
 		}
 
-		if importPath != "fyne.io/fyne/v2" {
+		if importPath != "github.com/alexballas/refyne/v2" {
 			continue
 		}
 		if spec.Name == nil {
