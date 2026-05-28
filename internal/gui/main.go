@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	ttwidget "github.com/alexballas/fyne-tooltip/widget"
 	"github.com/alexballas/refyne/v2"
 	"github.com/alexballas/refyne/v2/container"
 	"github.com/alexballas/refyne/v2/data/binding"
@@ -18,7 +19,6 @@ import (
 	"github.com/alexballas/refyne/v2/layout"
 	"github.com/alexballas/refyne/v2/theme"
 	"github.com/alexballas/refyne/v2/widget"
-	ttwidget "github.com/alexballas/fyne-tooltip/widget"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
@@ -617,7 +617,8 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		layout.NewSpacer(),
 		volumedown,
 		muteunmute,
-		volumeup)
+		volumeup,
+	)
 
 	mrightwidgets := container.NewHBox(previewmedia, clearmedia, mbrowse)
 	srightwidgets := container.NewHBox(selectInternalSubs, clearsubs, sbrowse)

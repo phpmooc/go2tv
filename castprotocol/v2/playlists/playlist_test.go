@@ -7,7 +7,7 @@ import (
 )
 
 func TestParsePLSFormat(t *testing.T) {
-	var wantUrls = []struct {
+	wantUrls := []struct {
 		url   string
 		title string
 	}{
@@ -45,7 +45,7 @@ func TestParsePLSFormat(t *testing.T) {
 }
 
 func TestParseM3UFormat(t *testing.T) {
-	var wantUrls = []struct {
+	wantUrls := []struct {
 		url   string
 		title string
 	}{

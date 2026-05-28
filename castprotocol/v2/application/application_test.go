@@ -12,8 +12,10 @@ import (
 	pb "go2tv.app/go2tv/v2/castprotocol/v2/cast/proto"
 )
 
-var mockAddr = "foo.bar"
-var mockPort = 42
+var (
+	mockAddr = "foo.bar"
+	mockPort = 42
+)
 
 func TestApplicationStart(t *testing.T) {
 	assertions := require.New(t)

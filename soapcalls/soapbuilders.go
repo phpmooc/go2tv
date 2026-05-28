@@ -11,9 +11,7 @@ import (
 	"go2tv.app/go2tv/v2/utils"
 )
 
-var (
-	ErrSetMuteInput = errors.New("setMuteSoapBuild input error. Was expecting 0 or 1.")
-)
+var ErrSetMuteInput = errors.New("setMuteSoapBuild input error. Was expecting 0 or 1.")
 
 type playEnvelope struct {
 	XMLName  xml.Name `xml:"s:Envelope"`

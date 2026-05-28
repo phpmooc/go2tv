@@ -87,12 +87,14 @@ func ServeTranscodedStream(ctx context.Context, w io.Writer, input any, ff *exec
 			args = append(args, "-ss", strconv.Itoa(seekSeconds), "-copyts")
 		}
 
-		args = append(args,
+		args = append(
+			args,
 			"-i", in,
 			"-vf", vf,
 		)
 		args = append(args, plan.codecArgs...)
-		args = append(args,
+		args = append(
+			args,
 			"-acodec", "aac",
 			"-ac", "2",
 			"-movflags", "+faststart",

@@ -14,9 +14,7 @@ import (
 	"time"
 )
 
-var (
-	ErrBadStatus = errors.New("streamURL bad status code")
-)
+var ErrBadStatus = errors.New("streamURL bad status code")
 
 const (
 	streamHTTPClientTimeout         = 20 * time.Second

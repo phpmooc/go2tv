@@ -556,7 +556,6 @@ func getDevices() ([]devType, error) {
 func volumeAction(screen *FyneScreen, up bool) {
 	w := screen.Current
 	go func() {
-
 		// Handle Chromecast volume
 		if screen.selectedDeviceType == devices.DeviceTypeChromecast {
 			if screen.chromecastClient == nil || !screen.chromecastClient.IsConnected() {

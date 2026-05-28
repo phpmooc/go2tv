@@ -60,7 +60,8 @@ MIT
 	cont := container.NewVBox(
 		imageContainer,
 		container.NewCenter(richhead),
-		container.NewCenter(container.NewHBox(githubbutton, checkversion)))
+		container.NewCenter(container.NewHBox(githubbutton, checkversion)),
+	)
 	return container.NewPadded(cont)
 }
 

@@ -132,7 +132,6 @@ func (c *Connection) connect(addr string, port int) error {
 }
 
 func (c *Connection) Send(requestID int, payload Payload, sourceID, destinationID, namespace string) error {
-
 	payloadJson, err := json.Marshal(payload)
 	if err != nil {
 		return errors.Wrap(err, "unable to marshal json payload")
@@ -225,7 +224,6 @@ func (c *Connection) receiveLoop(ctx context.Context) {
 }
 
 func (c *Connection) handleMessage(requestID int, message *pb.CastMessage, headers *PayloadHeader) {
-
 	messageType, err := jsonparser.GetString([]byte(*message.PayloadUtf8), "type")
 	if err != nil {
 		c.log("could not find 'type' key in response message request_id=%d %q: %s", requestID, *message.PayloadUtf8, err)

@@ -856,7 +856,6 @@ func playAction(screen *FyneScreen) {
 				go screen.GaplessMediaWatcher(serverStoppedCTX, screen, newTVPayload)
 			}
 		}
-
 	}()
 
 	go func() {
@@ -883,7 +882,6 @@ func playAction(screen *FyneScreen) {
 			screen.updateScreenState("Paused")
 		}
 	}()
-
 }
 
 func startChromecastScreencast(screen *FyneScreen) (string, string, context.Context, error) {
@@ -1936,7 +1934,6 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			setPlayPauseView("Pause", screen)
 			armChromecastImageAutoSkipAfterReady(screen, client, actionID, mediaType, screen.mediafile)
 			go chromecastStatusWatcher(serverStoppedCTX, screen, actionID)
-
 		}()
 		return
 	}
@@ -2079,7 +2076,6 @@ func stopAction(screen *FyneScreen) {
 		}
 		stopScreencastSession(screen)
 	}()
-
 }
 
 func getDevices() ([]devType, error) {

@@ -291,7 +291,6 @@ func (s *HTTPserver) callbackHandler(tv *soapcalls.TVPayload, screen Screen) htt
 
 		reqParsedUnescape := html.UnescapeString(string(reqParsed))
 		event, err := soapcalls.ParseEventNotify(reqParsedUnescape)
-
 		if err != nil {
 			http.NotFound(w, req)
 			return

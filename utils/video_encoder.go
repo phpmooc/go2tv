@@ -251,7 +251,8 @@ func probeTranscodeVideoEncoder(ffmpegPath string, plan videoEncoderPlan) error 
 		"-nostdin",
 	}
 	args = append(args, plan.globalArgs...)
-	args = append(args,
+	args = append(
+		args,
 		"-f", "lavfi",
 		"-i", "color=c=black:s=1280x720:r=30:d=0.5",
 		"-an",

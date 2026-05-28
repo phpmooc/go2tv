@@ -124,7 +124,8 @@ func ServeChromecastTranscodedStream(
 			if frameRate == 0 {
 				frameRate = 60
 			}
-			args = append(args,
+			args = append(
+				args,
 				"-f", "rawvideo",
 				"-pix_fmt", pixelFormat,
 				"-s", fmt.Sprintf("%dx%d", opts.RawInput.Width, opts.RawInput.Height),
@@ -132,7 +133,8 @@ func ServeChromecastTranscodedStream(
 			)
 		}
 
-		args = append(args,
+		args = append(
+			args,
 			"-i", in,
 			"-vf", vf,
 		)
@@ -144,7 +146,8 @@ func ServeChromecastTranscodedStream(
 			// Screen capture stream contains video only.
 			args = append(args, "-an")
 		} else {
-			args = append(args,
+			args = append(
+				args,
 				"-c:a", "aac",
 				"-b:a", "192k",
 				"-ar", "48000",
@@ -152,7 +155,8 @@ func ServeChromecastTranscodedStream(
 			)
 		}
 
-		args = append(args,
+		args = append(
+			args,
 			"-movflags", "+frag_keyframe+empty_moov+default_base_moof",
 			"-f", "mp4",
 			"pipe:1",

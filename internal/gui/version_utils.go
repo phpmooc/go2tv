@@ -2,10 +2,9 @@ package gui
 
 import (
 	"errors"
-	"strings"
-
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/alexballas/refyne/v2"

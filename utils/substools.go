@@ -105,7 +105,6 @@ func subtitleNames(streams []streams) ([]string, error) {
 
 			out = append(out, subName)
 		}
-
 	}
 
 	if len(out) > 1 {

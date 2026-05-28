@@ -3,13 +3,13 @@ package gui
 import (
 	"image/color"
 
+	ttwidget "github.com/alexballas/fyne-tooltip/widget"
 	"github.com/alexballas/refyne/v2"
 	"github.com/alexballas/refyne/v2/canvas"
 	"github.com/alexballas/refyne/v2/container"
 	"github.com/alexballas/refyne/v2/lang"
 	"github.com/alexballas/refyne/v2/theme"
 	"github.com/alexballas/refyne/v2/widget"
-	ttwidget "github.com/alexballas/fyne-tooltip/widget"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/internal/devicecolors"
 )

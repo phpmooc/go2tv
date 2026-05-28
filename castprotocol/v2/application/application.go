@@ -9,13 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"path/filepath"
 
 	"github.com/buger/jsonparser"
 	"github.com/h2non/filetype"
@@ -27,9 +26,7 @@ import (
 	"go2tv.app/go2tv/v2/castprotocol/v2/storage"
 )
 
-var (
-	_ App = &Application{}
-)
+var _ App = &Application{}
 
 const (
 	defaultSender = "sender-0"
@@ -419,7 +416,6 @@ func (a *Application) Update() error {
 	a.updateMediaStatus()
 
 	return nil
-
 }
 
 func (a *Application) updateMediaStatus() error {
@@ -573,7 +569,6 @@ func (a *Application) Previous() error {
 }
 
 func (a *Application) Skip() error {
-
 	if a.media == nil {
 		return ErrNoMediaSkip
 	}
@@ -696,7 +691,6 @@ func (a *Application) getReceiverStatus() (*cast.ReceiverStatusResponse, error) 
 		return nil, errors.Wrap(err, "error unmarshaling json")
 	}
 	return &response, nil
-
 }
 
 func (a *Application) PlayableMediaType(filename string) bool {
@@ -825,7 +819,6 @@ func (a *Application) Load(filenameOrUrl string, startTime int, contentType stri
 }
 
 func (a *Application) play(filenameOrUrl string, startTime int, contentType string, transcode, detach, forceDetach bool) error {
-
 	var mi mediaItem
 	isExternalMedia := false
 	if strings.HasPrefix(filenameOrUrl, "http://") || strings.HasPrefix(filenameOrUrl, "https://") {
@@ -920,7 +913,6 @@ func (a *Application) QueueLoad(filenames []string, contentType string, transcod
 }
 
 func (a *Application) QueueLoadItems(mediaItems []mediaItem, contentType string) error {
-
 	if err := a.ensureIsDefaultMediaReceiver(); err != nil {
 		return err
 	}
@@ -966,7 +958,6 @@ func (a *Application) ensureIsAppID(appID string) error {
 			PayloadHeader: cast.LaunchHeader,
 			AppId:         appID,
 		})
-
 		if err != nil {
 			return errors.Wrapf(err, "unable to change to appID %q", appID)
 		}
@@ -1406,7 +1397,6 @@ func (a *Application) startTranscodingServer(command string, args ...string) err
 }
 
 func (a *Application) Transcode(contentType string, command string, args ...string) error {
-
 	if command == "" || contentType == "" {
 		return errors.New("command and content-type flags needs to be set when transcoding")
 	}

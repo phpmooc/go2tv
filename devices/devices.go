@@ -370,6 +370,7 @@ func getDLNADevices() []Device {
 
 	return append([]Device(nil), dlnaDevices...)
 }
+
 func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 	if dev == nil {
 		return false

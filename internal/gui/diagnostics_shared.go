@@ -39,7 +39,8 @@ func latestCrashPath(s *FyneScreen) string {
 }
 
 func writeDiagnostics(w io.Writer, s *FyneScreen) error {
-	if _, err := fmt.Fprintf(w, "Go2TV Diagnostics\nGenerated: %s\nVersion: %s\nGOOS/GOARCH: %s/%s\nGo version: %s\n\n",
+	if _, err := fmt.Fprintf(
+		w, "Go2TV Diagnostics\nGenerated: %s\nVersion: %s\nGOOS/GOARCH: %s/%s\nGo version: %s\n\n",
 		time.Now().UTC().Format(time.RFC3339),
 		s.version,
 		runtime.GOOS,

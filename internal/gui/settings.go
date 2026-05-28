@@ -87,7 +87,6 @@ func (s *FyneScreen) setAutoPlaySameTypes(enabled bool) {
 }
 
 func settingsWindow(s *FyneScreen) fyne.CanvasObject {
-
 	w := s.Current
 
 	dropdownTheme := widget.NewSelect([]string{lang.L("System Default"), lang.L("Light"), lang.L("Dark")}, parseTheme(s))
@@ -175,7 +174,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		resumeHotkeys = suspendHotkeys(s)
 		fd.Show()
 		fd.Resize(fyne.NewSize(filePickerFillSize, filePickerFillSize))
-
 	})
 
 	ffmpegRightButtons := container.NewHBox(ffmpegFolderSelect, ffmpegFolderReset)

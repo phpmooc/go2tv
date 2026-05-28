@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	fynetooltip "github.com/alexballas/fyne-tooltip"
+	ttwidget "github.com/alexballas/fyne-tooltip/widget"
 	"github.com/alexballas/refyne/v2"
 	"github.com/alexballas/refyne/v2/app"
 	"github.com/alexballas/refyne/v2/container"
@@ -23,8 +25,6 @@ import (
 	"github.com/alexballas/refyne/v2/storage"
 	"github.com/alexballas/refyne/v2/theme"
 	"github.com/alexballas/refyne/v2/widget"
-	fynetooltip "github.com/alexballas/fyne-tooltip"
-	ttwidget "github.com/alexballas/fyne-tooltip/widget"
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
@@ -330,7 +330,6 @@ func Start(ctx context.Context, s *FyneScreen) {
 	showPendingCrashPopup(s)
 
 	w.ShowAndRun()
-
 }
 
 // EmitMsg Method to implement the screen interface

@@ -78,7 +78,6 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		})
 
 		blockGetDevices <- struct{}{}
-
 	}()
 
 	mfiletext := widget.NewEntry()

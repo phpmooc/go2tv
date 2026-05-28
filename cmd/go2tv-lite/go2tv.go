@@ -200,7 +200,6 @@ func run(crash *crashlog.Session) error {
 		FFmpegSeek:     0,
 		LogOutput:      nil,
 	})
-
 	if err != nil {
 		return err
 	}

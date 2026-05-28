@@ -5,6 +5,7 @@ import (
 	"cmp"
 	"context"
 	_ "embed"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -17,8 +18,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"errors"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -476,6 +475,7 @@ func (m listDevicesModel) View() string {
 	}
 	return s.String()
 }
+
 func listFlagFunction() error {
 	flagsEnabled := 0
 	flag.Visit(func(*flag.Flag) {
