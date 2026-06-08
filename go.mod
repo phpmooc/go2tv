@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac
 	github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab
-	github.com/alexballas/refyne/v2 v2.0.0-20260607190340-21ff761f36fd
+	github.com/alexballas/refyne/v2 v2.0.0-20260608222628-b87f61024910
 	github.com/alexballas/xfilepicker v0.0.0-20260607190308-e9ee35ae9ba9
 	github.com/buger/jsonparser v1.2.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -24,10 +24,10 @@ require (
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966
 	github.com/stretchr/testify v1.11.1
 	go2tv.app/screencast v0.0.0-20260415182719-6f13c7343d9c
-	golang.org/x/mod v0.36.0
-	golang.org/x/sys v0.45.0
+	golang.org/x/mod v0.37.0
+	golang.org/x/sys v0.46.0
 	golang.org/x/time v0.15.0
-	gopkg.in/ini.v1 v1.67.2
+	gopkg.in/ini.v1 v1.67.3
 )
 
 require (
@@ -77,11 +77,12 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
-	golang.org/x/image v0.41.0 // indirect
+	golang.org/x/image v0.42.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/term v0.43.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
+	golang.org/x/term v0.44.0 // indirect
+	golang.org/x/text v0.38.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
