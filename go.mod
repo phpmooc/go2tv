@@ -5,8 +5,8 @@ go 1.25.0
 require (
 	github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac
 	github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab
-	github.com/alexballas/refyne/v2 v2.0.0-20260528212441-14afcda9e1ea
-	github.com/alexballas/xfilepicker v0.0.0-20260528093634-f3608027fbc0
+	github.com/alexballas/refyne/v2 v2.0.0-20260607190340-21ff761f36fd
+	github.com/alexballas/xfilepicker v0.0.0-20260607190308-e9ee35ae9ba9
 	github.com/buger/jsonparser v1.2.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -16,7 +16,7 @@ require (
 	github.com/h2non/filetype v1.1.3
 	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/mdns v1.0.6
-	github.com/mattn/go-runewidth v0.0.23
+	github.com/mattn/go-runewidth v0.0.24
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d
@@ -25,6 +25,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go2tv.app/screencast v0.0.0-20260415182719-6f13c7343d9c
 	golang.org/x/mod v0.36.0
+	golang.org/x/sys v0.45.0
 	golang.org/x/time v0.15.0
 	gopkg.in/ini.v1 v1.67.2
 )
@@ -79,7 +80,6 @@ require (
 	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/tools v0.45.0 // indirect

@@ -6,10 +6,10 @@ github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac h1:P+Mync0
 github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac/go.mod h1:ahMS3ktoYdWFIzqbQFJ4TyqdFQpMRSAepNwjKc0Y4/o=
 github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab h1:IicL/N9O22AchM2bp5mwCtvzVpRqCzvPiy9g1FbFLS8=
 github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab/go.mod h1:bvfmHkfGgEntZVIbSzazSp6zSxD68BJGsLVASpcEHxI=
-github.com/alexballas/refyne/v2 v2.0.0-20260528212441-14afcda9e1ea h1:GJkpQRJI2/kkGKw1omnsF3LH2PQ5gPNCQTisLbhmNHw=
-github.com/alexballas/refyne/v2 v2.0.0-20260528212441-14afcda9e1ea/go.mod h1:x9QY8Y3dBqBJvW6u0U7y5oq1thxiQXUTOdjd3FMA4Ho=
-github.com/alexballas/xfilepicker v0.0.0-20260528093634-f3608027fbc0 h1:dNecB1MFy/GsuA9CdhTTg+EgSadMBOC/FGXzMIV6+lc=
-github.com/alexballas/xfilepicker v0.0.0-20260528093634-f3608027fbc0/go.mod h1:YfapnIcQMfIrzpaWnx/vvzqMxVgV/RmHwZ6I0g3uF48=
+github.com/alexballas/refyne/v2 v2.0.0-20260607190340-21ff761f36fd h1:0uba0qQVkKs05PNr41RWrDJSaAiy+ajgxWQK7SjEFo8=
+github.com/alexballas/refyne/v2 v2.0.0-20260607190340-21ff761f36fd/go.mod h1:GceJN/p21C/SfhAIszdrMms3DV+xscRzfQqUoGHnjac=
+github.com/alexballas/xfilepicker v0.0.0-20260607190308-e9ee35ae9ba9 h1:ngebrGBfaETQxRT4NsilzENhOmV8X3+D2i+tGh7rYCs=
+github.com/alexballas/xfilepicker v0.0.0-20260607190308-e9ee35ae9ba9/go.mod h1:I4vwXhkx8mHVR/R40wAHyR9Qh0G9L8UMK60hf5G1JLk=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/buger/jsonparser v1.2.0 h1:4EFcvK1kD4jyj6YqNK6skK6w+y7FHHBR+XBCtxwu/6g=
@@ -105,8 +105,8 @@ github.com/mattn/go-isatty v0.0.22 h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw
 github.com/mattn/go-isatty v0.0.22/go.mod h1:ZXfXG4SQHsB/w3ZeOYbR0PrPwLy+n6xiMrJlRFqopa4=
 github.com/mattn/go-localereader v0.0.1 h1:ygSAOl7ZXTx4RdPYinUpg6W99U8jWvWi9Ye2JC/oIi4=
 github.com/mattn/go-localereader v0.0.1/go.mod h1:8fBrzywKY7BI3czFoHkuzRoWE9C+EiG4R1k4Cjx5p88=
-github.com/mattn/go-runewidth v0.0.23 h1:7ykA0T0jkPpzSvMS5i9uoNn2Xy3R383f9HDx3RybWcw=
-github.com/mattn/go-runewidth v0.0.23/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
+github.com/mattn/go-runewidth v0.0.24 h1:cpokDiIn0MGnhdHwuWnJBITySJ20QyNGnY2kR/ay2DU=
+github.com/mattn/go-runewidth v0.0.24/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
 github.com/miekg/dns v1.1.55/go.mod h1:uInx36IzPl7FYnDcMeVWxj9byh7DutNykX4G9Sj60FY=
 github.com/miekg/dns v1.1.72 h1:vhmr+TF2A3tuoGNkLDFK9zi36F2LS+hKTRW0Uf8kbzI=
 github.com/miekg/dns v1.1.72/go.mod h1:+EuEPhdHOsfk6Wk5TT2CzssZdqkmFhf8r+aVyDEToIs=
