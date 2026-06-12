@@ -16,10 +16,12 @@ import (
 const shellLookupTimeout = 2 * time.Second
 
 var (
-	defaultFFmpegOnce sync.Once
-	defaultFFmpegPath string
-	defaultFFmpegErr  error
-	pathLookupMu      sync.Mutex
+	defaultFFmpegOnce   sync.Once
+	defaultFFmpegPath   string
+	defaultFFmpegErr    error
+	pathLookupMu        sync.Mutex
+	platformFFmpegPath  func() (string, error)
+	platformFFprobePath func() (string, error)
 )
 
 // ResolveFFmpegPath returns an executable ffmpeg path.
@@ -28,6 +30,12 @@ func ResolveFFmpegPath(preferred string) (string, error) {
 	preferred = strings.TrimSpace(preferred)
 	if preferred != "" {
 		return resolveCommandPath("ffmpeg", preferred)
+	}
+
+	if platformFFmpegPath != nil {
+		if path, err := platformFFmpegPath(); err == nil {
+			return path, nil
+		}
 	}
 
 	defaultFFmpegOnce.Do(func() {
@@ -40,6 +48,12 @@ func ResolveFFmpegPath(preferred string) (string, error) {
 // ResolveFFprobePath returns an executable ffprobe path.
 // If ffmpegPath resolves to an absolute binary, its sibling ffprobe is preferred.
 func ResolveFFprobePath(ffmpegPath string) (string, error) {
+	if shouldUsePlatformFFprobe(ffmpegPath) {
+		if path, err := platformFFprobePath(); err == nil {
+			return path, nil
+		}
+	}
+
 	if ffmpegPath != "" {
 		resolvedFFmpeg, err := resolveCommandPath("ffmpeg", ffmpegPath)
 		if err == nil && filepath.Base(resolvedFFmpeg) != resolvedFFmpeg {
@@ -51,6 +65,17 @@ func ResolveFFprobePath(ffmpegPath string) (string, error) {
 	}
 
 	return resolveToolPath("ffprobe")
+}
+
+func shouldUsePlatformFFprobe(ffmpegPath string) bool {
+	if platformFFprobePath == nil {
+		return false
+	}
+	if strings.TrimSpace(ffmpegPath) == "" {
+		return true
+	}
+
+	return filepath.Base(ffmpegPath) == "libffmpeg.so"
 }
 
 func resolveCommandPath(toolName, preferred string) (string, error) {

@@ -81,6 +81,7 @@ jobs:
 
           const expected = [
             `go2tv_${versionTag}_android`,
+            `go2tv_${versionTag}_android_ffmpeg`,
             `go2tv_${versionTag}_linux_amd64`,
             `go2tv_${versionTag}_linux_arm`,
             `go2tv_${versionTag}_linux_arm64`,
@@ -144,6 +145,15 @@ jobs:
             cp "$apk_path" "$GITHUB_WORKSPACE/release-assets/Go2TV.apk"
           fi
 
+          if [[ "$name" == *"_android_ffmpeg" ]]; then
+            apk_path="$(find "$workdir" -type f -name 'Go2TV-ffmpeg.apk' | head -n1 || true)"
+            if [ -z "$apk_path" ]; then
+              echo "android ffmpeg apk missing in $zip_path"
+              exit 1
+            fi
+            cp "$apk_path" "$GITHUB_WORKSPACE/release-assets/Go2TV-ffmpeg.apk"
+          fi
+
           if [[ "$name" == *"_linux_"* ]] && [ -f "$workdir/go2tv" ]; then
             chmod +x "$workdir/go2tv"
           fi
@@ -178,6 +188,7 @@ jobs:
         files: |
           release-assets/*.zip
           release-assets/Go2TV.apk
+          release-assets/Go2TV-ffmpeg.apk
         draft: true
         overwrite_files: true
       env:

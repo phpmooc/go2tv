@@ -3,8 +3,8 @@ package utils
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 )
@@ -29,10 +29,20 @@ func ServeTranscodedStream(ctx context.Context, w io.Writer, input any, ff *exec
 	// Pipe streaming is not great as explained here
 	// https://video.stackexchange.com/questions/34087/ffmpeg-fails-on-pipe-to-pipe-video-decoding.
 	// That's why if we have the option to pass the file directly to ffmpeg, we should.
+	// Readers backed by a real file (e.g. Android content:// descriptors) are
+	// handed to ffmpeg as a seekable fd rather than an unseekable pipe.
+	if r, ok := input.(io.Reader); ok {
+		if f, ok := underlyingOSFile(r); ok {
+			input = f
+		}
+	}
+
 	var in string
 	switch f := input.(type) {
 	case string:
 		in = f
+	case *os.File:
+		in = ffmpegInputForFile(ffmpegPath, f)
 	case io.Reader:
 		in = "pipe:0"
 	default:
@@ -43,29 +53,8 @@ func ServeTranscodedStream(ctx context.Context, w io.Writer, input any, ff *exec
 		_ = ff.Process.Kill()
 	}
 
-	subFilter := ""
-	charenc, err := getCharDet(subs)
-
-	// For now I'm just using Medium as default.
-	// We can later add an option in the GUI to select subtitle size.
-	if err == nil {
-		fontSize := 24
-		switch subSize {
-		case SubtitleSizeSmall:
-			fontSize = 20
-		case SubtitleSizeLarge:
-			fontSize = 30
-		}
-
-		forceStyle := fmt.Sprintf(":force_style='FontSize=%d,Outline=1'", fontSize)
-		escapedPath := escapeFFmpegPath(subs)
-
-		if charenc == "UTF-8" {
-			subFilter = fmt.Sprintf("subtitles='%s'%s", escapedPath, forceStyle)
-		} else {
-			subFilter = fmt.Sprintf("subtitles='%s':charenc=%s%s", escapedPath, charenc, forceStyle)
-		}
-	}
+	// Stream without subtitles when the filter can't be built.
+	subFilter, _ := subtitleBurnFilter(ffmpegPath, subs, subSize)
 
 	encoderPlan := selectTranscodeVideoEncoder(ffmpegPath, videoEncoderProfileDLNA)
 	buildArgs := func(plan videoEncoderPlan) []string {

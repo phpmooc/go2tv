@@ -22,8 +22,20 @@ FFMPEG_STATIC_ARCHIVE=$(BUILD_DIR)/ffmpeg-static.tar.xz
 FFMPEG_STATIC_DIR=$(BUILD_DIR)/ffmpeg-static
 FFMPEG_APP_LIBDIR=$(APPDIR)/usr/lib/ffmpeg
 APPIMAGE_FFMPEG_MODE?=auto
+FYNE?=fyne
+APK_OUT=$(BUILD_DIR)/Go2TV.apk
+APK_FFMPEG_OUT=$(BUILD_DIR)/Go2TV-ffmpeg.apk
+APK_FFMPEG_ALIGNED=$(BUILD_DIR)/Go2TV-ffmpeg-aligned.apk
+ANDROID_FFMPEG_BASE_URL?=https://raw.githubusercontent.com/hzw1199/Android-FFmpeg-Prebuilt/main/ffmpeg-8.1.1/bin
+ANDROID_FFMPEG_URL?=$(ANDROID_FFMPEG_BASE_URL)/ffmpeg
+ANDROID_FFPROBE_URL?=$(ANDROID_FFMPEG_BASE_URL)/ffprobe
+ANDROID_FFMPEG_BIN=$(BUILD_DIR)/ffmpeg-android
+ANDROID_FFPROBE_BIN=$(BUILD_DIR)/ffprobe-android
+ANDROID_APK_LIBS=$(BUILD_DIR)/apk-libs
+ANDROID_ABI?=arm64-v8a
+ANDROID_BUILD_TOOLS?=$(shell ls -d $$ANDROID_HOME/build-tools/* 2>/dev/null | sort -V | tail -n1)
 
-.PHONY: build wayland windows install uninstall clean run test appimage appimage-ffmpeg
+.PHONY: build wayland windows install uninstall clean run test appimage appimage-ffmpeg android android-ffmpeg
 
 build: clean
 	go build -tags "$(TAGS)" -trimpath -ldflags $(LDFLAGS) -o $(BIN) ./cmd/go2tv
@@ -51,6 +63,82 @@ run: build
 
 test:
 	go test -v ./...
+
+android:
+	set -e; \
+	if [ -z "$$ANDROID_NDK_HOME" ]; then echo "ANDROID_NDK_HOME is required"; exit 1; fi; \
+	mkdir -p $(BUILD_DIR); \
+	rm -f $(APK_OUT); \
+	cd cmd/go2tv; \
+	rm -f ./*.apk; \
+	ANDROID_NDK_HOME="$$ANDROID_NDK_HOME" $(FYNE) package \
+		--os android \
+		--name Go2TV \
+		--app-id app.go2tv.go2tv \
+		--icon ../../assets/go2tv-icon-android.png \
+		--app-version "$(VERSION)" \
+		--app-build 1 \
+		--release; \
+	APK_BUILT="$$(find . -maxdepth 1 -type f -name '*.apk' | head -n 1)"; \
+	if [ -z "$$APK_BUILT" ]; then echo "fyne did not create an APK"; exit 1; fi; \
+	mv "$$APK_BUILT" ../../$(APK_OUT); \
+	echo "APK created at $(APK_OUT)"
+
+android-ffmpeg:
+	set -e; \
+	if [ -z "$$ANDROID_NDK_HOME" ]; then echo "ANDROID_NDK_HOME is required"; exit 1; fi; \
+	if [ -z "$$ANDROID_HOME" ]; then echo "ANDROID_HOME is required"; exit 1; fi; \
+	if [ -z "$(ANDROID_BUILD_TOOLS)" ]; then echo "Android build-tools not found under ANDROID_HOME"; exit 1; fi; \
+	if [ ! -x "$(ANDROID_BUILD_TOOLS)/aapt" ]; then echo "aapt missing in $(ANDROID_BUILD_TOOLS)"; exit 1; fi; \
+	if [ ! -x "$(ANDROID_BUILD_TOOLS)/zipalign" ]; then echo "zipalign missing in $(ANDROID_BUILD_TOOLS)"; exit 1; fi; \
+	if [ ! -x "$(ANDROID_BUILD_TOOLS)/apksigner" ]; then echo "apksigner missing in $(ANDROID_BUILD_TOOLS)"; exit 1; fi; \
+	if ! command -v zip >/dev/null 2>&1; then echo "zip is required"; exit 1; fi; \
+	if ! command -v keytool >/dev/null 2>&1; then echo "keytool is required"; exit 1; fi; \
+	mkdir -p $(BUILD_DIR); \
+	rm -rf $(ANDROID_APK_LIBS) $(ANDROID_FFMPEG_BIN) $(ANDROID_FFPROBE_BIN) $(APK_FFMPEG_OUT) $(APK_FFMPEG_ALIGNED); \
+	cd cmd/go2tv; \
+	rm -f ./*.apk; \
+	ANDROID_NDK_HOME="$$ANDROID_NDK_HOME" $(FYNE) package \
+		--os android/arm64 \
+		--name "Go2TV ffmpeg" \
+		--app-id app.go2tv.go2tv \
+		--icon ../../assets/go2tv-icon-android.png \
+		--app-version "$(VERSION)" \
+		--app-build 1 \
+		--release; \
+	APK_BUILT="$$(find . -maxdepth 1 -type f -name '*.apk' | head -n 1)"; \
+	if [ -z "$$APK_BUILT" ]; then echo "fyne did not create an APK"; exit 1; fi; \
+	mv "$$APK_BUILT" ../../$(APK_FFMPEG_OUT); \
+	cd ../..; \
+	echo "Downloading android ffmpeg: $(ANDROID_FFMPEG_URL)"; \
+	curl -fsSL "$(ANDROID_FFMPEG_URL)" -o $(ANDROID_FFMPEG_BIN) || wget -q -O $(ANDROID_FFMPEG_BIN) "$(ANDROID_FFMPEG_URL)"; \
+	echo "Downloading android ffprobe: $(ANDROID_FFPROBE_URL)"; \
+	curl -fsSL "$(ANDROID_FFPROBE_URL)" -o $(ANDROID_FFPROBE_BIN) || wget -q -O $(ANDROID_FFPROBE_BIN) "$(ANDROID_FFPROBE_URL)"; \
+	chmod 755 $(ANDROID_FFMPEG_BIN) $(ANDROID_FFPROBE_BIN); \
+	mkdir -p $(ANDROID_APK_LIBS)/lib/$(ANDROID_ABI); \
+	cp $(ANDROID_FFMPEG_BIN) $(ANDROID_APK_LIBS)/lib/$(ANDROID_ABI)/libffmpeg.so; \
+	cp $(ANDROID_FFPROBE_BIN) $(ANDROID_APK_LIBS)/lib/$(ANDROID_ABI)/libffprobe.so; \
+	chmod 755 $(ANDROID_APK_LIBS)/lib/$(ANDROID_ABI)/libffmpeg.so $(ANDROID_APK_LIBS)/lib/$(ANDROID_ABI)/libffprobe.so; \
+	( cd $(ANDROID_APK_LIBS) && zip -q -g ../$(notdir $(APK_FFMPEG_OUT)) lib/$(ANDROID_ABI)/libffmpeg.so lib/$(ANDROID_ABI)/libffprobe.so ); \
+	MANIFEST_DUMP="$$($(ANDROID_BUILD_TOOLS)/aapt dump xmltree $(APK_FFMPEG_OUT) AndroidManifest.xml || true)"; \
+	if echo "$$MANIFEST_DUMP" | grep -E "extractNativeLibs.*(false|0x0)" >/dev/null; then \
+		echo "AndroidManifest sets extractNativeLibs=false"; \
+		exit 1; \
+	fi; \
+	$(ANDROID_BUILD_TOOLS)/zipalign -f 4 $(APK_FFMPEG_OUT) $(APK_FFMPEG_ALIGNED); \
+	mv $(APK_FFMPEG_ALIGNED) $(APK_FFMPEG_OUT); \
+	if [ -n "$${GO2TV_ANDROID_KEYSTORE:-}" ] && [ -z "$${GO2TV_ANDROID_KEYSTORE_PASS:-}" ]; then echo "GO2TV_ANDROID_KEYSTORE_PASS is required with GO2TV_ANDROID_KEYSTORE"; exit 1; fi; \
+	KEYSTORE="$${GO2TV_ANDROID_KEYSTORE:-$(BUILD_DIR)/go2tv-debug.keystore}"; \
+	KEY_ALIAS="$${GO2TV_ANDROID_KEY_ALIAS:-go2tv}"; \
+	STOREPASS="$${GO2TV_ANDROID_KEYSTORE_PASS:-android}"; \
+	KEYPASS="$${GO2TV_ANDROID_KEY_PASS:-$$STOREPASS}"; \
+	if [ -z "$${GO2TV_ANDROID_KEYSTORE:-}" ] && [ ! -f "$$KEYSTORE" ]; then \
+		keytool -genkeypair -v -keystore "$$KEYSTORE" -storepass "$$STOREPASS" -keypass "$$KEYPASS" -alias "$$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Go2TV,O=Go2TV,C=US"; \
+	fi; \
+	$(ANDROID_BUILD_TOOLS)/apksigner sign --ks "$$KEYSTORE" --ks-key-alias "$$KEY_ALIAS" --ks-pass pass:"$$STOREPASS" --key-pass pass:"$$KEYPASS" $(APK_FFMPEG_OUT); \
+	$(ANDROID_BUILD_TOOLS)/apksigner verify $(APK_FFMPEG_OUT); \
+	rm -rf $(ANDROID_APK_LIBS) $(ANDROID_FFMPEG_BIN) $(ANDROID_FFPROBE_BIN); \
+	echo "APK created at $(APK_FFMPEG_OUT)"
 
 appimage: build
 	# Prepare AppDir structure
@@ -203,5 +291,3 @@ appimage-ffmpeg: build
 
 	# Clean up ffmpeg build/download files
 	rm -rf $(FFMPEG_STATIC_DIR) $(FFMPEG_STATIC_ARCHIVE) $(BUILD_DIR)/ffmpeg-src $(BUILD_DIR)/ffmpeg.tar.xz
-
-

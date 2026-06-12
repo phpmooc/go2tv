@@ -433,6 +433,10 @@ func serveContent(w http.ResponseWriter, r *http.Request, tv *soapcalls.TVPayloa
 			http.NotFound(w, r)
 			return
 		}
+		if transcode {
+			serveContentReadClose(w, r, tv, tcOpts, mediaType, transcode, rsc, ff)
+			return
+		}
 		serveContentSeekCloser(w, r, mediaType, seek, rsc)
 	case []byte:
 		serveContentBytes(w, r, mediaType, f)

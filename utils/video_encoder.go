@@ -89,6 +89,11 @@ func transcodeSoftwareEncoderPlan(profile videoEncoderProfile) videoEncoderPlan 
 
 func transcodeHardwareEncoderCandidates(profile videoEncoderProfile) []videoEncoderPlan {
 	switch runtime.GOOS {
+	case "android":
+		return []videoEncoderPlan{
+			transcodeHardwareEncoderPlan(profile, "h264_mediacodec", nil),
+			transcodeHardwareEncoderPlan(profile, "h264_v4l2m2m", nil),
+		}
 	case "darwin":
 		return []videoEncoderPlan{
 			transcodeHardwareEncoderPlan(profile, "h264_videotoolbox", nil),
