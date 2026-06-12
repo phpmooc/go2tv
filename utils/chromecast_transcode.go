@@ -96,7 +96,7 @@ func ServeChromecastTranscodedStream(
 		// For piped input, skip -ss parameter entirely (even -ss 0) as it can cause issues
 		// Also skip -re for piped input as it interacts badly with streams
 		args := []string{opts.FFmpegPath}
-		if in != "pipe:0" {
+		if realtimePacedInput(in) {
 			args = append(args, "-re")
 		}
 

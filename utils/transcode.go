@@ -67,7 +67,7 @@ func ServeTranscodedStream(ctx context.Context, w io.Writer, input any, ff *exec
 
 		// For piped input, skip -ss parameter entirely (even -ss 0) as it can cause issues
 		args := []string{ffmpegPath}
-		if in != "pipe:0" {
+		if realtimePacedInput(in) {
 			args = append(args, "-re")
 		}
 		args = append(args, plan.globalArgs...)

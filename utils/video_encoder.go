@@ -191,10 +191,16 @@ func transcodeSoftwareCodecArgs(profile videoEncoderProfile) []string {
 func transcodeHardwareCodecArgs(profile videoEncoderProfile, codec string) []string {
 	switch profile {
 	case videoEncoderProfileDLNA:
-		return []string{
+		args := []string{
 			"-c:v", codec,
 			"-g", "30",
 		}
+		// MediaCodec/V4L2 M2M default to very low bitrates, producing
+		// blocky output; request a proper streaming bitrate explicitly.
+		if codec == "h264_mediacodec" || codec == "h264_v4l2m2m" {
+			args = append(args, "-b:v", "5M", "-maxrate", "10M", "-bufsize", "20M")
+		}
+		return args
 	case videoEncoderProfileChromecastRaw:
 		return []string{
 			"-c:v", codec,
