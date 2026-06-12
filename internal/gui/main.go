@@ -310,15 +310,22 @@ func (t *tappedSlider) seekDLNAAsync() {
 		fyne.Do(func() {
 			t.screen.CurrentPos.Set(reltime)
 			t.screen.EndPos.Set(end)
-			if isTranscode {
-				t.screen.ffmpegSeek = roundedInt
-				t.screen.dlnaSeekRestart = true
-			}
 		})
 
 		if isTranscode {
-			stopAction(t.screen)
+			// playAction reads these from its own goroutine, so set them
+			// here instead of inside the queued fyne.Do above.
+			t.screen.ffmpegSeek = roundedInt
+			t.screen.dlnaSeekRestart = true
+
+			// Live-transcoded streams are advertised as non-seekable
+			// (DLNA.ORG_OP=00), so renderers reject Seek with error 701.
+			// Restart the session at the new offset instead, waiting for
+			// the old session's teardown so its Stop cannot race with the
+			// new SetAVTransportURI/Play.
+			stopActionSync(t.screen)
 			playAction(t.screen)
+			return
 		}
 
 		_ = tvdata.SeekSoapCall(reltime)

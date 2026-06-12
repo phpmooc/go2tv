@@ -2010,6 +2010,18 @@ func previewmedia(screen *FyneScreen) {
 }
 
 func stopAction(screen *FyneScreen) {
+	stopActionInternal(screen, false)
+}
+
+// stopActionSync behaves like stopAction but waits for the DLNA network
+// teardown (Stop call and HTTP server shutdown) to complete before returning.
+// The transcoded seek restart needs this ordering: a Stop that races with the
+// next session's SetAVTransportURI/Play makes renderers drop the new session.
+func stopActionSync(screen *FyneScreen) {
+	stopActionInternal(screen, true)
+}
+
+func stopActionInternal(screen *FyneScreen, wait bool) {
 	screen.persistDisplayedResumeProgress(true)
 	screen.clearResumeSession()
 	chromecastClient := screen.chromecastSessionClient()
@@ -2073,8 +2085,7 @@ func stopAction(screen *FyneScreen) {
 	screen.tvdata = nil
 	screen.httpserver = nil
 
-	// Run blocking network operations in background
-	go func() {
+	teardown := func() {
 		if tvdata != nil && tvdata.ControlURL != "" {
 			_ = tvdata.SendtoTV("Stop")
 		}
@@ -2082,7 +2093,15 @@ func stopAction(screen *FyneScreen) {
 			server.StopServer()
 		}
 		stopScreencastSession(screen)
-	}()
+	}
+
+	if wait {
+		teardown()
+		return
+	}
+
+	// Run blocking network operations in background
+	go teardown()
 }
 
 func getDevices() ([]devType, error) {
