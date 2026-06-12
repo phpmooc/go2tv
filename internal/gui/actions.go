@@ -31,7 +31,13 @@ import (
 	"go2tv.app/screencast/hls"
 )
 
-const filePickerFillSize = 10000
+const (
+	filePickerFillSize      = 10000
+	imagePreviewMinWidth    = 160
+	imagePreviewMinHeight   = 120
+	imagePreviewStartWidth  = 800
+	imagePreviewStartHeight = 600
+)
 
 func armChromecastImageAutoSkipAfterReady(screen *FyneScreen, client *castprotocol.CastClient, actionID uint64, mediaType, mediaPath string) {
 	if !strings.HasPrefix(mediaType, "image/") {
@@ -1988,9 +1994,10 @@ func previewmedia(screen *FyneScreen) {
 			img := canvas.NewImageFromFile(screen.mediafile)
 			img.FillMode = canvas.ImageFillContain
 			img.ScaleMode = canvas.ImageScaleFastest
+			img.SetMinSize(fyne.NewSize(imagePreviewMinWidth, imagePreviewMinHeight))
 			imgw := fyne.CurrentApp().NewWindow(filepath.Base(screen.mediafile))
 			imgw.SetContent(img)
-			imgw.Resize(fyne.NewSize(800, 600))
+			imgw.Resize(fyne.NewSize(imagePreviewStartWidth, imagePreviewStartHeight))
 			imgw.CenterOnScreen()
 			imgw.Show()
 		})
