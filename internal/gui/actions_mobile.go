@@ -399,6 +399,12 @@ func playAction(screen *FyneScreen) {
 
 	transcodeEnabled := mediaTranscodeEnabled(screen, mediaType)
 
+	// Non-transcoded local media is served with HTTP range support (see
+	// seekableMediaForCasting), so advertise it as seekable and let the renderer
+	// seek via its own controls. External URLs are streamed without range support
+	// and transcoded streams are live, so both stay non-seekable.
+	isSeek := !transcodeEnabled && !screen.ExternalMediaURL.Checked
+
 	ffmpegSubsPath := ""
 	if screen.subsfile != nil {
 		if transcodeEnabled {
@@ -431,6 +437,7 @@ func playAction(screen *FyneScreen) {
 		MediaRenderersStates:        make(map[string]*soapcalls.States),
 		InitialMediaRenderersStates: make(map[string]bool),
 		Transcode:                   transcodeEnabled,
+		Seekable:                    isSeek,
 		LogOutput:                   screen.Debug,
 		FFmpegPath:                  screen.ffmpegPath,
 		FFmpegSubsPath:              ffmpegSubsPath,
