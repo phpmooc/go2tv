@@ -17,11 +17,11 @@ jobs:
       with:
         go-version: 'stable'
 
-    - name: Install fyne
-      run: go install fyne.io/tools/cmd/fyne@latest
+    - name: Install refyne
+      run: go install github.com/alexballas/refyne/v2/cmd/fyne@latest
 
     - name: Update FyneApp.toml version
-      run: sed -i '' "s/^Version.*/Version = \"${{ env.GO2TV_VERSION }}\"/" cmd/go2tv/FyneApp.toml
+      run: sed -i '' "s/^Version.*/Version = \"$(echo ${{ env.GO2TV_VERSION }} | sed 's/^v//')\"/" cmd/go2tv/FyneApp.toml
 
     - name: Package (macOS)
       run: |
