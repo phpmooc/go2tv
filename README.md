@@ -39,14 +39,20 @@ No need to copy files to a USB drive or set up a media server. Just select your 
 
 ## Installation
 
-**Download the latest release** from the [releases page](https://github.com/alexballas/Go2TV/releases/latest).
+**macOS**: Install with Homebrew:
+
+```bash
+brew install --cask go2tv
+```
+
+Or **download the latest release** from the [releases page](https://github.com/alexballas/Go2TV/releases/latest).
 
 - **Windows**: Download `go2tv_vX.Y.Z_windows_amd64.zip`, extract, and run `go2tv.exe`
 - **macOS**: Download `go2tv_vX.Y.Z_macOS_amd64.zip` (Intel) or `go2tv_vX.Y.Z_macOS_arm64.zip` (Apple Silicon), extract, and run the app
 - **Linux**: Download `go2tv_vX.Y.Z_linux_amd64.zip` (or appropriate arch), extract, and run `go2tv`
 - **Android**: Download `Go2TV.apk` for the plain universal build, or `Go2TV-ffmpeg.apk` for the arm64 build with bundled FFmpeg transcoding
 
-Go2TV is a single executable with no installation required. Just download and run.
+For release downloads, Go2TV is a single executable with no installation required. Just download and run.
 
 ### Optional: FFmpeg for Transcoding
 
@@ -214,7 +220,10 @@ Go2TV uses a custom Chromecast receiver hosted at https://cast-receiver.go2tv.ap
 
 **Firewall Configuration**
 
-Go2TV uses ports 3339-3438 for device discovery. If you're behind a firewall, allow inbound UDP traffic on these ports.
+If you're behind a firewall, allow inbound traffic from devices on your local network:
+
+- `3339-3438/udp` for DLNA/UPnP device discovery
+- `3500-4499/tcp` for the local HTTP media server used by DLNA and Chromecast playback
 
 ---
 
