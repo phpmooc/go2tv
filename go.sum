@@ -6,8 +6,8 @@ github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac h1:P+Mync0
 github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac/go.mod h1:ahMS3ktoYdWFIzqbQFJ4TyqdFQpMRSAepNwjKc0Y4/o=
 github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab h1:IicL/N9O22AchM2bp5mwCtvzVpRqCzvPiy9g1FbFLS8=
 github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab/go.mod h1:bvfmHkfGgEntZVIbSzazSp6zSxD68BJGsLVASpcEHxI=
-github.com/alexballas/refyne/v2 v2.0.0-20260614233152-fa0b57ec8449 h1:MmFScgskJm/cTdOfGnwcUm88LUX5b2oV/TtvbpZ7o1k=
-github.com/alexballas/refyne/v2 v2.0.0-20260614233152-fa0b57ec8449/go.mod h1:GceJN/p21C/SfhAIszdrMms3DV+xscRzfQqUoGHnjac=
+github.com/alexballas/refyne/v2 v2.0.0-20260622184610-d281c2e6bc17 h1:Z6wlSGYZMybY3PA15FVjujRCBx9l9SN7FKkDoByzTGA=
+github.com/alexballas/refyne/v2 v2.0.0-20260622184610-d281c2e6bc17/go.mod h1:GceJN/p21C/SfhAIszdrMms3DV+xscRzfQqUoGHnjac=
 github.com/alexballas/xfilepicker v0.0.0-20260615164249-3b661a1044b9 h1:SIRuLmH+VFevJBzb0lxOCrpQyLxLu18zWIhY4lXdi2E=
 github.com/alexballas/xfilepicker v0.0.0-20260615164249-3b661a1044b9/go.mod h1:5xgikLIG/bdiSLLJaiF7TamQ0sch9AIVxsDoBdv8Ar8=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
@@ -171,8 +171,8 @@ golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9/go.mod h1:LzIPMQfyMNhhGPh
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
 golang.org/x/exp v0.0.0-20231006140011-7918f672742d h1:jtJma62tbqLibJ5sFQz8bKtEM8rJBtfilJ2qTU199MI=
 golang.org/x/exp v0.0.0-20231006140011-7918f672742d/go.mod h1:ldy0pHrwJyGW56pPQzzkH36rKxoZW1tw7ZJpeKx+hdo=
-golang.org/x/image v0.42.0 h1:1gSs6ehNWXLbkHBIPcWztk3D/6aIA/8hauiAYtlodVY=
-golang.org/x/image v0.42.0/go.mod h1:rrpelvGFt+kLPAjPM4HeWPgrl0FtafueU//e5N0qk/Q=
+golang.org/x/image v0.43.0 h1:FLxcP4ec2350nTfOC8ysKtqYSIFbk/QGjw1ZHNP4tsY=
+golang.org/x/image v0.43.0/go.mod h1:rrpelvGFt+kLPAjPM4HeWPgrl0FtafueU//e5N0qk/Q=
 golang.org/x/mod v0.2.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
 golang.org/x/mod v0.3.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=
 golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4/go.mod h1:jJ57K6gSWd91VN4djpZkiMVwK6gcyfeH4XE8wZrZaV4=

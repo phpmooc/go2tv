@@ -143,5 +143,4 @@ utils/                 - Shared utilities (transcode, ffprobe, subtitle conversi
 - At the end of each plan, give me a list of unresolved questions to answer, if any. Make the questions extremely concise. Sacrifice grammar for the sake of concision.
 
 # Global Instructions
-ALWAYS start your response with the phrase: "Status: AGENTS.MD LOADED."
 Always use Context7 MCP when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.

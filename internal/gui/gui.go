@@ -289,7 +289,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(tabs, w.Canvas()))
 	minSize := tabs.MinSize()
-	w.Resize(fyne.NewSize(fyne.Max(1000, minSize.Width), minSize.Height+(theme.Padding()*4)))
+	w.Resize(fyne.NewSize(fyne.Max(1000, minSize.Width), minSize.Height))
 	w.CenterOnScreen()
 	w.SetMaster()
 

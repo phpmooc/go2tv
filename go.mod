@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac
 	github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab
-	github.com/alexballas/refyne/v2 v2.0.0-20260614233152-fa0b57ec8449
+	github.com/alexballas/refyne/v2 v2.0.0-20260622184610-d281c2e6bc17
 	github.com/alexballas/xfilepicker v0.0.0-20260615164249-3b661a1044b9
 	github.com/buger/jsonparser v1.2.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -77,7 +77,7 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/yuin/goldmark v1.8.2 // indirect
-	golang.org/x/image v0.42.0 // indirect
+	golang.org/x/image v0.43.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/term v0.44.0 // indirect

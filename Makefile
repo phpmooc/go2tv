@@ -1,7 +1,9 @@
 VERSION=$(shell cat version.txt)
 LDFLAGS="-s -w -X main.version=$(VERSION)"
-LDFLAGS_WINDOWS="-s -w -H=windowsgui -X main.version=$(VERSION)"
 TAGS?=migrated_fynedo
+GO2TV_CGO_CFLAGS_ALLOW=$(if $(CGO_CFLAGS_ALLOW),($(CGO_CFLAGS_ALLOW))|-fno-strict-overflow,-fno-strict-overflow)
+GO_BUILD_ENV=CGO_CFLAGS_ALLOW="$(GO2TV_CGO_CFLAGS_ALLOW)"
+REFYNE_PACKAGE?=github.com/alexballas/refyne/v2/cmd/fyne@latest
 
 BUILD_DIR=build
 BIN=$(BUILD_DIR)/go2tv
@@ -23,6 +25,18 @@ FFMPEG_STATIC_DIR=$(BUILD_DIR)/ffmpeg-static
 FFMPEG_APP_LIBDIR=$(APPDIR)/usr/lib/ffmpeg
 APPIMAGE_FFMPEG_MODE?=auto
 FYNE?=fyne
+WINDOWS_FYNE?=$(CURDIR)/$(BUILD_DIR)/tools/fyne
+WINDOWS_SYSROOT=$(BUILD_DIR)/windows-sysroot
+WINDOWS_SYSROOT_ABS=$(CURDIR)/$(WINDOWS_SYSROOT)
+WINDOWS_MINGW_URL?=https://mirror.msys2.org/mingw/mingw64
+WINDOWS_HEADERS_VERSION?=14.0.0.r98.g19f5121a2-1
+WINDOWS_CPPWINRT_VERSION?=2.0.250303.1-2
+WINDOWS_HEADERS_PKG=mingw-w64-x86_64-headers-$(WINDOWS_HEADERS_VERSION)-any.pkg.tar.zst
+WINDOWS_CPPWINRT_PKG=mingw-w64-x86_64-cppwinrt-$(WINDOWS_CPPWINRT_VERSION)-any.pkg.tar.zst
+WINDOWS_CGO_INCLUDE=-I$(WINDOWS_SYSROOT_ABS)/mingw64/include
+WINDOWS_CGO_LDFLAGS=-static -static-libgcc -static-libstdc++ -Wl,-Bstatic -l:libstdc++.a -l:libwinpthread.a
+WINDOWS_APP_VERSION?=$(shell sed -n 's/^\([0-9][0-9.]*\).*/\1/p' version.txt)
+WINDOWS_APP_BUILD?=1
 APK_OUT=$(BUILD_DIR)/Go2TV.apk
 APK_FFMPEG_OUT=$(BUILD_DIR)/Go2TV-ffmpeg.apk
 APK_FFMPEG_ALIGNED=$(BUILD_DIR)/Go2TV-ffmpeg-aligned.apk
@@ -35,16 +49,88 @@ ANDROID_APK_LIBS=$(BUILD_DIR)/apk-libs
 ANDROID_ABI?=arm64-v8a
 ANDROID_BUILD_TOOLS?=$(shell ls -d $$ANDROID_HOME/build-tools/* 2>/dev/null | sort -V | tail -n1)
 
-.PHONY: build wayland windows install uninstall clean run test appimage appimage-ffmpeg android android-ffmpeg
+.PHONY: build wayland x11 windows windows-sysroot windows-fyne install uninstall clean run test appimage appimage-ffmpeg android android-ffmpeg
 
 build: clean
-	go build -tags "$(TAGS)" -trimpath -ldflags $(LDFLAGS) -o $(BIN) ./cmd/go2tv
+	env $(GO_BUILD_ENV) go build -tags "$(TAGS)" -trimpath -ldflags $(LDFLAGS) -o $(BIN) ./cmd/go2tv
 
 wayland: clean
-	go build -tags "$(TAGS),wayland" -trimpath -ldflags $(LDFLAGS) -o $(BIN) ./cmd/go2tv
+	env $(GO_BUILD_ENV) go build -tags "$(TAGS),wayland" -trimpath -ldflags $(LDFLAGS) -o $(BIN) ./cmd/go2tv
+
+x11: clean
+	env $(GO_BUILD_ENV) go build -tags "$(TAGS),x11" -trimpath -ldflags $(LDFLAGS) -o $(BIN) ./cmd/go2tv
 
 windows: clean
-	env CGO_ENABLED=1 CC=$$(command -v x86_64-w64-mingw32-gcc-win32 || echo x86_64-w64-mingw32-gcc) CXX=$$(command -v x86_64-w64-mingw32-g++-win32 || echo x86_64-w64-mingw32-g++) CGO_LDFLAGS="-static -static-libgcc -static-libstdc++ -Wl,-Bstatic -l:libstdc++.a -l:libwinpthread.a" GOOS=windows GOARCH=amd64 go build -tags "$(TAGS)" -trimpath -ldflags "$(LDFLAGS_WINDOWS) -linkmode external -extldflags '-static'" -o $(BIN_WIN) ./cmd/go2tv
+	$(MAKE) windows-sysroot windows-fyne
+	set -e; \
+	CC_BIN="$$(command -v x86_64-w64-mingw32-gcc-win32 || command -v x86_64-w64-mingw32-gcc || true)"; \
+	CXX_BIN="$$(command -v x86_64-w64-mingw32-g++-win32 || command -v x86_64-w64-mingw32-g++ || true)"; \
+	if [ -z "$$CC_BIN" ]; then echo "x86_64-w64-mingw32-gcc is required"; exit 1; fi; \
+	if [ -z "$$CXX_BIN" ]; then echo "x86_64-w64-mingw32-g++ is required"; exit 1; fi; \
+	APP_VERSION="$(WINDOWS_APP_VERSION)"; \
+	if [ -z "$$APP_VERSION" ]; then APP_VERSION="0.0.0"; fi; \
+	MAIN_SRC="$(CURDIR)/cmd/go2tv/go2tv.go"; \
+	FYNEAPP="$(CURDIR)/cmd/go2tv/FyneApp.toml"; \
+	MAIN_BAK="$$(mktemp)"; \
+	FYNEAPP_BAK="$$(mktemp)"; \
+	cp "$$MAIN_SRC" "$$MAIN_BAK"; \
+	cp "$$FYNEAPP" "$$FYNEAPP_BAK"; \
+	trap 'cp "$$MAIN_BAK" "$$MAIN_SRC"; cp "$$FYNEAPP_BAK" "$$FYNEAPP"; rm -f "$$MAIN_BAK" "$$FYNEAPP_BAK" cmd/go2tv/fyne.syso cmd/go2tv/FyneApp.ico cmd/go2tv/go2tv.exe.manifest' EXIT; \
+	sed -i 's/version      = "dev"/version      = "$(VERSION)"/' "$$MAIN_SRC"; \
+	rm -f cmd/go2tv/go2tv.exe cmd/go2tv/fyne.syso cmd/go2tv/FyneApp.ico cmd/go2tv/go2tv.exe.manifest; \
+	cd cmd/go2tv; \
+	CGO_ENABLED=1 \
+	CC="$$CC_BIN" \
+	CXX="$$CXX_BIN" \
+	CGO_CPPFLAGS="$(WINDOWS_CGO_INCLUDE)" \
+	CGO_CFLAGS="$(WINDOWS_CGO_INCLUDE)" \
+	CGO_CXXFLAGS="$(WINDOWS_CGO_INCLUDE)" \
+	CGO_LDFLAGS="$(WINDOWS_CGO_LDFLAGS)" \
+	GOARCH=amd64 \
+	GOFLAGS="-ldflags=-linkmode=external -ldflags=-extldflags=-static" \
+	"$(WINDOWS_FYNE)" package \
+		--release \
+		--os windows \
+		--name go2tv \
+		--app-id app.go2tv.go2tv \
+		--app-version "$$APP_VERSION" \
+		--app-build "$(WINDOWS_APP_BUILD)" \
+		--tags "$(TAGS)" \
+		--icon ../../assets/go2tv-icon.png; \
+	cd ../..; \
+	mv cmd/go2tv/go2tv.exe $(BIN_WIN); \
+	if command -v x86_64-w64-mingw32-objdump >/dev/null 2>&1; then \
+		x86_64-w64-mingw32-objdump -p $(BIN_WIN) | grep "DLL Name" | tee $(BUILD_DIR)/go2tv-windows-imports.txt; \
+		! grep -Eq "libwinpthread-1.dll|libstdc\\+\\+-6.dll" $(BUILD_DIR)/go2tv-windows-imports.txt; \
+	fi; \
+	echo "EXE created at $(BIN_WIN)"
+
+windows-sysroot:
+	set -e; \
+	mkdir -p $(BUILD_DIR) $(WINDOWS_SYSROOT); \
+	if ! command -v unzstd >/dev/null 2>&1; then echo "unzstd is required"; exit 1; fi; \
+	for pkg in $(WINDOWS_HEADERS_PKG) $(WINDOWS_CPPWINRT_PKG); do \
+		pkg_path="$(BUILD_DIR)/$$pkg"; \
+		if [ ! -f "$$pkg_path" ]; then \
+			url="$(WINDOWS_MINGW_URL)/$$pkg"; \
+			echo "Downloading $$url"; \
+			if command -v curl >/dev/null 2>&1; then \
+				curl -fsSL "$$url" -o "$$pkg_path"; \
+			elif command -v wget >/dev/null 2>&1; then \
+				wget -q -O "$$pkg_path" "$$url"; \
+			else \
+				echo "curl or wget is required"; \
+				exit 1; \
+			fi; \
+		fi; \
+		tar --use-compress-program=unzstd -xf "$$pkg_path" -C $(WINDOWS_SYSROOT); \
+	done; \
+	test -f $(WINDOWS_SYSROOT)/mingw64/include/windows.foundation.h; \
+	test -f $(WINDOWS_SYSROOT)/mingw64/include/winrt/Windows.Foundation.h
+
+windows-fyne:
+	mkdir -p $(BUILD_DIR)/tools
+	GOBIN="$(CURDIR)/$(BUILD_DIR)/tools" go install $(REFYNE_PACKAGE)
 
 
 install: build
