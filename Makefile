@@ -96,7 +96,7 @@ windows: clean
 		--app-version "$$APP_VERSION" \
 		--app-build "$(WINDOWS_APP_BUILD)" \
 		--tags "$(TAGS)" \
-		--icon ../../assets/go2tv-icon.png; \
+		--icon ../../assets/go2tv-icon-desktop-256.png; \
 	cd ../..; \
 	mv cmd/go2tv/go2tv.exe $(BIN_WIN); \
 	if command -v x86_64-w64-mingw32-objdump >/dev/null 2>&1; then \
