@@ -148,7 +148,7 @@ run: build
 	$(BIN)
 
 test:
-	go test -v ./...
+	env $(GO_BUILD_ENV) go test -v ./...
 
 android:
 	set -e; \
