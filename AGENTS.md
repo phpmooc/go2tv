@@ -32,12 +32,9 @@ go run cmd/fynedo-check/main.go internal/gui/   # Standard fyne.Do violation che
 ### Mobile Build Verification
 For all phases, verify mobile builds pass:
 ```bash
-cd cmd/go2tv && APATH=/home/alex/Downloads/android-ndk-r27d/ && GO386='softfloat' ANDROID_NDK_HOME=$APATH go run github.com/alexballas/refyne/v2/cmd/fyne@latest package --os android --name Go2TV --app-id app.go2tv.go2tv --icon ../../assets/go2tv-icon-android.png && mv Go2TV.apk ../.. && cd ../..
+ANDROID_HOME=/home/alex/Android/Sdk ANDROID_NDK_HOME=/home/alex/Downloads/android-ndk-r27d FYNE='go run github.com/alexballas/refyne/v2/cmd/fyne@latest' make android
 ```
-For the Android FFmpeg APK flavor:
-```bash
-ANDROID_HOME=/home/alex/Android/Sdk ANDROID_NDK_HOME=/home/alex/Downloads/android-ndk-r27d FYNE='go run github.com/alexballas/refyne/v2/cmd/fyne@latest' make android-ffmpeg
-```
+Android builds bundle FFmpeg by default.
 **Note**: go2tv targets the refyne fork (`github.com/alexballas/refyne/v2`), so it must be packaged with refyne's own `cmd/fyne` (invoked above via `go run`). The stock `fyne` CLI fails with `does not import "fyne.io/fyne/v2/internal/driver/mobile/app"` because it checks for the upstream import path, not the refyne one.
 
 ## Architecture

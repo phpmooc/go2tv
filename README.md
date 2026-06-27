@@ -14,7 +14,6 @@
 [![Build for ARMv6 (32-bit)](https://github.com/alexballas/go2tv/actions/workflows/build-arm.yml/badge.svg?branch=devel)](https://github.com/alexballas/go2tv/actions/workflows/build-arm.yml)
 [![Build for ARMv8 (64-bit)](https://github.com/alexballas/go2tv/actions/workflows/build-arm64.yml/badge.svg?branch=devel)](https://github.com/alexballas/go2tv/actions/workflows/build-arm64.yml)
 [![Build for Android](https://github.com/alexballas/go2tv/actions/workflows/build-android.yml/badge.svg?branch=devel)](https://github.com/alexballas/go2tv/actions/workflows/build-android.yml)
-[![Build for Android FFmpeg](https://github.com/alexballas/go2tv/actions/workflows/build-android-ffmpeg.yml/badge.svg?branch=devel)](https://github.com/alexballas/go2tv/actions/workflows/build-android-ffmpeg.yml)
 [![Build for Linux](https://github.com/alexballas/go2tv/actions/workflows/build-linux.yml/badge.svg?branch=devel)](https://github.com/alexballas/go2tv/actions/workflows/build-linux.yml)
 [![Build for MacOS Intel](https://github.com/alexballas/go2tv/actions/workflows/build-mac-intel.yml/badge.svg?branch=devel)](https://github.com/alexballas/go2tv/actions/workflows/build-mac-intel.yml)
 [![Build for MacOS Apple Silicon](https://github.com/alexballas/go2tv/actions/workflows/build-mac.yml/badge.svg?branch=devel)](https://github.com/alexballas/go2tv/actions/workflows/build-mac.yml)
@@ -50,7 +49,7 @@ Or **download the latest release** from the [releases page](https://github.com/a
 - **Windows**: Download `go2tv_vX.Y.Z_windows_amd64.zip`, extract, and run `go2tv.exe`
 - **macOS**: Download `go2tv_vX.Y.Z_macOS_amd64.zip` (Intel) or `go2tv_vX.Y.Z_macOS_arm64.zip` (Apple Silicon), extract, and run the app
 - **Linux**: Download `go2tv_vX.Y.Z_linux_amd64.zip` (or appropriate arch), extract, and run `go2tv`
-- **Android**: Download `Go2TV.apk` for the plain universal build, or `Go2TV-ffmpeg.apk` for the arm64 build with bundled FFmpeg transcoding
+- **Android**: Download `go2tv_vX.Y.Z.apk` for the arm64 build with bundled FFmpeg transcoding
 
 For release downloads, Go2TV is a single executable with no installation required. Just download and run.
 
@@ -63,7 +62,7 @@ When transcoding is enabled, Go2TV probes available GPU H.264 encoders first and
 - **macOS**: `brew install ffmpeg`
 - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
 - **Flatpak**: FFmpeg is bundled automatically
-- **Android**: Use `Go2TV-ffmpeg.apk` for bundled FFmpeg. It is arm64-only and larger than the plain APK.
+- **Android**: FFmpeg is bundled in the default APK. It is arm64-only and requires Android 9.0+.
 
 ---
 
@@ -261,10 +260,9 @@ make appimage-ffmpeg
 
 ``` console
 make android
-make android-ffmpeg
 ```
 
-`make android` builds the plain APK. `make android-ffmpeg` builds the arm64 APK and bundles Android NDK-built `ffmpeg`/`ffprobe` executables as native libraries. Set `ANDROID_NDK_HOME` for both and `ANDROID_HOME` for the ffmpeg flavor.
+`make android` builds the arm64 APK and bundles Android `ffmpeg`/`ffprobe` executables as native libraries. Set `ANDROID_NDK_HOME` and `ANDROID_HOME`.
 
 **Using Docker**
 
