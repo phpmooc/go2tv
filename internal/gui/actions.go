@@ -25,6 +25,7 @@ import (
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/playback"
 	"go2tv.app/go2tv/v2/rtmp"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
@@ -1139,6 +1140,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	var mediaURL string
 	var mediaType string
 	serverStoppedCTX := context.Background()
+	subtitleHost := ""
 
 	if screen.ExternalMediaURL.Checked {
 		mediaURL = screen.MediaText.Text
@@ -1157,19 +1159,16 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			}
 			mediaType = inferredMediaType
 			mediaURLinfo.Close()
-			if utils.IsHLSStream(mediaURL, mediaType) {
-				transcode = false
+
+			wasTranscode := transcode
+			transcode = playback.ChromecastExternalURLPolicy(mediaURL, mediaType, transcode, screen.subsfile).Transcode
+			if wasTranscode && !transcode {
+				screen.Transcode = false
 				fyne.Do(func() {
 					if screen.TranscodeCheckBox != nil && screen.TranscodeCheckBox.Checked {
 						screen.TranscodeCheckBox.SetChecked(false)
 					}
 				})
-			}
-
-			// Chromecast handles images and audio natively - never transcode these
-			mediaTypeSlice := strings.Split(mediaType, "/")
-			if len(mediaTypeSlice) > 0 && (mediaTypeSlice[0] == "image" || mediaTypeSlice[0] == "audio") {
-				transcode = false
 			}
 
 			// Set casting media type
@@ -1253,10 +1252,48 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 				mediaType = "video/mp4"
 			}
 		} else {
-			var cancel context.CancelFunc
-			serverStoppedCTX, cancel = context.WithCancel(context.Background())
-			screen.serverStopCTX = serverStoppedCTX
-			go func() { <-serverStoppedCTX.Done(); cancel() }()
+			_, hasSubtitles := playback.ChromecastSubtitlePath(screen.subsfile)
+			if hasSubtitles {
+				whereToListen, err := utils.URLtoListenIPandPort(sessionDevice.addr)
+				if err != nil {
+					check(screen, err)
+					startAfreshPlayButton(screen)
+					return
+				}
+
+				if screen.httpserver != nil {
+					screen.httpserver.StopServer()
+				}
+
+				screen.httpserver = httphandlers.NewServer(whereToListen)
+				serverStarted := make(chan error)
+				var serverCTXStop context.CancelFunc
+				serverStoppedCTX, serverCTXStop = context.WithCancel(context.Background())
+				screen.serverStopCTX = serverStoppedCTX
+				screen.cancelServerStop = serverCTXStop
+				subtitleHost = whereToListen
+
+				go func() {
+					screen.httpserver.StartServing(serverStarted)
+					serverCTXStop()
+				}()
+
+				if err := <-serverStarted; err != nil {
+					check(screen, err)
+					startAfreshPlayButton(screen)
+					return
+				}
+			} else {
+				if screen.httpserver != nil {
+					screen.httpserver.StopServer()
+					screen.httpserver = nil
+				}
+
+				var cancel context.CancelFunc
+				serverStoppedCTX, cancel = context.WithCancel(context.Background())
+				screen.serverStopCTX = serverStoppedCTX
+				screen.cancelServerStop = cancel
+			}
 		}
 
 	} else if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked {
@@ -1359,22 +1396,26 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	var subtitleURL string
 	isRTMP := screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked
 	if screen.subsfile != "" && screen.httpserver != nil && (!transcode || isRTMP) {
-		// Extract host:port from mediaURL to ensure subtitle uses same server
-		mediaURLParsed, err := url.Parse(mediaURL)
-		if err == nil && mediaURLParsed.Host != "" {
-			ext := strings.ToLower(filepath.Ext(screen.subsfile))
+		if subtitleHost == "" {
+			mediaURLParsed, err := url.Parse(mediaURL)
+			if err == nil {
+				subtitleHost = mediaURLParsed.Host
+			}
+		}
+		if subtitlesPath, ok := playback.ChromecastSubtitlePath(screen.subsfile); ok && subtitleHost != "" {
+			ext := strings.ToLower(filepath.Ext(subtitlesPath))
 			switch ext {
 			case ".srt":
-				webvttData, err := utils.ConvertSRTtoWebVTT(screen.subsfile)
+				webvttData, err := utils.ConvertSRTtoWebVTT(subtitlesPath)
 				if err != nil {
 					check(screen, fmt.Errorf("subtitle conversion: %w", err))
 				} else {
 					screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, webvttData)
-					subtitleURL = "http://" + mediaURLParsed.Host + "/subtitles.vtt"
+					subtitleURL = "http://" + subtitleHost + "/subtitles.vtt"
 				}
 			case ".vtt":
-				screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, screen.subsfile)
-				subtitleURL = "http://" + mediaURLParsed.Host + "/subtitles.vtt"
+				screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, subtitlesPath)
+				subtitleURL = "http://" + subtitleHost + "/subtitles.vtt"
 			}
 		}
 	}
