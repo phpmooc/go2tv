@@ -529,7 +529,7 @@ func copySubsToTempFile(screen *FyneScreen) (string, error) {
 		ext = ".srt"
 	}
 
-	tempFile, err := os.CreateTemp("", "go2tv-sub-*"+ext)
+	tempFile, err := createMobileCacheTemp("go2tv-sub-*" + ext)
 	if err != nil {
 		return "", fmt.Errorf("temp subtitle create: %w", err)
 	}
@@ -779,7 +779,7 @@ func seekableMediaForCasting(screen *FyneScreen) (any, error) {
 	defer mediaReader.Close()
 
 	ext := filepath.Ext(screen.MediaText.Text)
-	tempFile, err := os.CreateTemp("", "go2tv-*"+ext)
+	tempFile, err := createMobileCacheTemp("go2tv-*" + ext)
 	if err != nil {
 		return nil, fmt.Errorf("temp file create: %w", err)
 	}

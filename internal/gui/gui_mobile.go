@@ -5,7 +5,6 @@ package gui
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
@@ -84,11 +83,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 	w := s.Current
 
 	// Clean up orphaned temp files from previous crashes
-	if files, err := filepath.Glob(filepath.Join(os.TempDir(), "go2tv-*")); err == nil {
-		for _, f := range files {
-			os.Remove(f)
-		}
-	}
+	cleanupMobileCacheTempFiles()
 
 	devices.StartDiscovery(ctx)
 
