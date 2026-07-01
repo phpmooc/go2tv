@@ -6,12 +6,12 @@ github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac h1:P+Mync0
 github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac/go.mod h1:ahMS3ktoYdWFIzqbQFJ4TyqdFQpMRSAepNwjKc0Y4/o=
 github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab h1:IicL/N9O22AchM2bp5mwCtvzVpRqCzvPiy9g1FbFLS8=
 github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab/go.mod h1:bvfmHkfGgEntZVIbSzazSp6zSxD68BJGsLVASpcEHxI=
-github.com/alexballas/refyne/v2 v2.0.0-20260630231613-724858f53150 h1:UB4xJbeDozgDXHmJHDtQIY5jKuGi7yW7uUlYw8NLqFU=
-github.com/alexballas/refyne/v2 v2.0.0-20260630231613-724858f53150/go.mod h1:A5ylOSbXKGDIq5nyq92kjxq6Z43H4UQBugJPnN5SqPk=
+github.com/alexballas/refyne/v2 v2.0.0-20260701214453-1d6251febc78 h1:t9xPl5ZrKpiyceMUFPfyAjbbyGQbG66b/G8s6up/v10=
+github.com/alexballas/refyne/v2 v2.0.0-20260701214453-1d6251febc78/go.mod h1:A5ylOSbXKGDIq5nyq92kjxq6Z43H4UQBugJPnN5SqPk=
 github.com/alexballas/xfilepicker v0.0.0-20260615164249-3b661a1044b9 h1:SIRuLmH+VFevJBzb0lxOCrpQyLxLu18zWIhY4lXdi2E=
 github.com/alexballas/xfilepicker v0.0.0-20260615164249-3b661a1044b9/go.mod h1:5xgikLIG/bdiSLLJaiF7TamQ0sch9AIVxsDoBdv8Ar8=
-github.com/anthonynsimon/bild v0.15.0 h1:FzvaNLuNlAPKw1Xz7V2WYOcGIEBMj8Y6ZyAk7CI+HzA=
-github.com/anthonynsimon/bild v0.15.0/go.mod h1:qIgJ9FldkCn0iy5Ad24fzUkz5R+iJ0WfhiV+6FeCB5A=
+github.com/anthonynsimon/bild v0.16.0 h1:LB69jaZEFAzzKx8ZDXV4L3pjGsB5sCuC8HjFC4ubyPw=
+github.com/anthonynsimon/bild v0.16.0/go.mod h1:q/rfwcyRxZX2SZtA3JlANCuCqCCd4+9ctj2+0eOIjdE=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1 h1:HwpRHbFMcZLEVr42D4p7XBqjyuxQH5SMiErDT4WkJ2k=
 github.com/aymanbagabas/go-osc52/v2 v2.0.1/go.mod h1:uYgXzlJ7ZpABp8OJ+exZzJJhRNQ2ASbcXHWsFqH8hp8=
 github.com/buger/jsonparser v1.2.0 h1:4EFcvK1kD4jyj6YqNK6skK6w+y7FHHBR+XBCtxwu/6g=

@@ -5,7 +5,7 @@ go 1.26
 require (
 	github.com/alexballas/fyne-tooltip v0.0.0-20260528093432-da161b5c8cac
 	github.com/alexballas/go-ssdp v0.0.4-0.20260524181453-a1b7428979ab
-	github.com/alexballas/refyne/v2 v2.0.0-20260630231613-724858f53150
+	github.com/alexballas/refyne/v2 v2.0.0-20260701214453-1d6251febc78
 	github.com/alexballas/xfilepicker v0.0.0-20260615164249-3b661a1044b9
 	github.com/buger/jsonparser v1.2.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -33,7 +33,7 @@ require (
 require (
 	fyne.io/systray v1.12.2 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
-	github.com/anthonynsimon/bild v0.15.0 // indirect
+	github.com/anthonynsimon/bild v0.16.0 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/x/ansi v0.11.7 // indirect
