@@ -517,7 +517,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	s.transcodeToolTipCheck = transcode
 	s.screencastToolTipCheck = screencast
 	s.rtmpServerToolTipCheck = rtmpServerCheck
-	if err := utils.CheckFFmpeg(s.ffmpegPath); err != nil {
+	if err := s.ffmpegStatus(); err != nil {
 		s.rtmpServerCheck.Disable()
 		screencast.Disable()
 	}
@@ -717,7 +717,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 
 	screencast.OnChanged = func(b bool) {
 		if b {
-			if err := utils.CheckFFmpeg(s.ffmpegPath); err != nil {
+			if err := s.validateFFmpeg(); err != nil {
 				check(s, errors.New(lang.L("ffmpeg is required for screencast")))
 				screencast.SetChecked(false)
 				return
@@ -761,7 +761,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 
 		s.Screencast = false
 		go stopScreencastSession(s)
-		if err := utils.CheckFFmpeg(s.ffmpegPath); err == nil && s.rtmpServer == nil {
+		if err := s.ffmpegStatus(); err == nil && s.rtmpServer == nil {
 			transcode.Enable()
 			externalmedia.Enable()
 			sfilecheck.Enable()

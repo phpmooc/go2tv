@@ -98,6 +98,10 @@ type FyneScreen struct {
 	muError                  sync.RWMutex
 	mu                       sync.RWMutex
 	ffmpegPathChanged        bool
+	ffmpegCheckPath          string
+	ffmpegCheckErr           error
+	ffmpegCheckValid         bool
+	ffmpegCheckDirty         bool
 	Medialoop                bool
 	sliderActive             bool
 	dlnaSeekRestart          bool
@@ -179,7 +183,7 @@ func (s *FyneScreen) updateFFmpegDependentCheckTooltips() {
 		return
 	}
 
-	ffmpegMissing := utils.CheckFFmpeg(s.ffmpegPath) != nil
+	ffmpegMissing := s.ffmpegCheckValid && !s.ffmpegCheckDirty && s.ffmpegCheckPath == s.ffmpegPath && s.ffmpegCheckErr != nil
 	toolTipMsg := lang.L("ffmpeg is required. install it or update ffmpeg path in Settings")
 
 	setToolTip := func(ttCheck *ttwidget.Check, baseCheck *widget.Check) {
@@ -196,6 +200,40 @@ func (s *FyneScreen) updateFFmpegDependentCheckTooltips() {
 	setToolTip(s.transcodeToolTipCheck, s.TranscodeCheckBox)
 	setToolTip(s.screencastToolTipCheck, s.ScreencastCheckBox)
 	setToolTip(s.rtmpServerToolTipCheck, s.rtmpServerCheck)
+}
+
+func (s *FyneScreen) markFFmpegPathChanged() {
+	if s == nil {
+		return
+	}
+
+	s.ffmpegPathChanged = true
+	s.ffmpegCheckDirty = true
+}
+
+func (s *FyneScreen) ffmpegStatus() error {
+	if s == nil {
+		return nil
+	}
+
+	if !s.ffmpegCheckValid || s.ffmpegCheckDirty || s.ffmpegCheckPath != s.ffmpegPath {
+		return s.validateFFmpeg()
+	}
+
+	return s.ffmpegCheckErr
+}
+
+func (s *FyneScreen) validateFFmpeg() error {
+	if s == nil {
+		return nil
+	}
+
+	err := utils.CheckFFmpeg(s.ffmpegPath)
+	s.ffmpegCheckPath = s.ffmpegPath
+	s.ffmpegCheckErr = err
+	s.ffmpegCheckValid = true
+	s.ffmpegCheckDirty = false
+	return err
 }
 
 //go:embed translations
@@ -240,7 +278,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 				s.TranscodeCheckBox.Disable()
 			}
 
-			ffmpegErr := utils.CheckFFmpeg(s.ffmpegPath)
+			ffmpegErr := s.ffmpegStatus()
 			if ffmpegErr != nil {
 				s.TranscodeCheckBox.SetChecked(false)
 				s.TranscodeCheckBox.Disable()
@@ -262,9 +300,11 @@ func Start(ctx context.Context, s *FyneScreen) {
 			s.updateFFmpegDependentCheckTooltips()
 
 			if s.ffmpegPathChanged {
-				furi, err := storage.ParseURI("file://" + s.mediafile)
-				if err == nil {
-					selectMediaFile(s, furi)
+				if ffmpegErr == nil && s.mediafile != "" {
+					furi, err := storage.ParseURI("file://" + s.mediafile)
+					if err == nil {
+						selectMediaFile(s, furi)
+					}
 				}
 				s.ffmpegPathChanged = false
 			}
@@ -276,7 +316,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 
 	s.ffmpegPathChanged = false
 
-	if err := utils.CheckFFmpeg(s.ffmpegPath); err != nil {
+	if err := s.ffmpegStatus(); err != nil {
 		s.TranscodeCheckBox.Disable()
 		if s.ScreencastCheckBox != nil {
 			s.ScreencastCheckBox.Disable()
@@ -709,7 +749,7 @@ func (p *FyneScreen) checkChromecastCompatibility() {
 	if p.chromecastCheckedFile == p.mediafile {
 		return
 	}
-	if err := utils.CheckFFmpeg(p.ffmpegPath); err != nil {
+	if err := p.ffmpegStatus(); err != nil {
 		return // Can't transcode anyway
 	}
 

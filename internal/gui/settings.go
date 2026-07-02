@@ -138,7 +138,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		ffmpegTextEntry.SetText(path)
 		updatingFFmpegEntry = false
 		s.ffmpegPath, _ = utils.ResolveFFmpegPath("")
-		s.ffmpegPathChanged = true
+		s.markFFmpegPathChanged()
 	})
 
 	ffmpegFolderSelect := widget.NewButtonWithIcon("", theme.FolderOpenIcon(), func() {
@@ -195,7 +195,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 			s.ffmpegPath = update
 		}
 		fyne.CurrentApp().Preferences().SetString("ffmpeg", update)
-		s.ffmpegPathChanged = true
+		s.markFFmpegPathChanged()
 	}
 
 	debugExport := widget.NewButton(lang.L("Export Diagnostics"), func() {

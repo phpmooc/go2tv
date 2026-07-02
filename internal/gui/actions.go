@@ -892,7 +892,7 @@ func playAction(screen *FyneScreen) {
 }
 
 func startChromecastScreencast(screen *FyneScreen) (string, string, context.Context, error) {
-	if err := utils.CheckFFmpeg(screen.ffmpegPath); err != nil {
+	if err := screen.validateFFmpeg(); err != nil {
 		return "", "", nil, errors.New(lang.L("ffmpeg is required for screencast"))
 	}
 
@@ -2476,7 +2476,7 @@ func resetRTMPUI(screen *FyneScreen) {
 	}
 
 	screen.ClearMedia.Enable()
-	if err := utils.CheckFFmpeg(screen.ffmpegPath); err == nil {
+	if err := screen.ffmpegStatus(); err == nil {
 		if !screen.Screencast {
 			screen.TranscodeCheckBox.Enable()
 		}
