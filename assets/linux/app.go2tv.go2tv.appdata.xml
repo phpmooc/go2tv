@@ -51,6 +51,20 @@
   </branding>
 
   <releases>
+      <release version="2.4.0" date="2026-07-06" type="stable">
+        <description>
+          <ul>
+            <li>Fixed file drag-and-drop support in Flatpak builds.</li>
+            <li>Improved UI fluidity by supporting refresh rates above 60 Hz.</li>
+            <li>Improved the file picker experience and fixed several issues.</li>
+            <li>Improved subtitle track naming and extraction.</li>
+            <li>Linux: Added full Wayland support.</li>
+            <li>Android: Now bundles FFmpeg.</li>
+            <li>Windows: Fixed icon resolution.</li>
+          </ul>
+        </description>
+        <url type="details">https://github.com/alexballas/go2tv/releases/tag/v2.4.0</url>
+      </release>
       <release version="2.3.0" date="2026-04-21" type="stable">
         <description>
           <ul>
