@@ -11,8 +11,29 @@ jobs:
     - uses: actions/checkout@v6
 
     - name: Set env
+      id: version
       shell: bash
-      run: if grep -Fxq "devel" version.txt;then echo "GO2TV_VERSION=$(cat version.txt)";else echo "GO2TV_VERSION=v$(cat version.txt)";fi  >> $GITHUB_ENV
+      run: |
+        version="$(cat version.txt)"
+        if [ "$version" = "devel" ]; then
+          go2tv_version="$version"
+        else
+          go2tv_version="v$version"
+        fi
+
+        windows_app_version="$(printf '%s\n' "$version" | sed -n 's/^\([0-9][0-9.]*\).*/\1/p')"
+        if [ -z "$windows_app_version" ]; then
+          windows_app_version="0.0.0"
+        fi
+
+        {
+          echo "GO2TV_VERSION=$go2tv_version"
+          echo "GO2TV_WINDOWS_APP_VERSION=$windows_app_version"
+        } >> "$GITHUB_ENV"
+        {
+          echo "go2tv_version=$go2tv_version"
+          echo "windows_app_version=$windows_app_version"
+        } >> "$GITHUB_OUTPUT"
 
     - uses: actions/setup-go@v6
       with:
@@ -31,23 +52,23 @@ jobs:
 
     - name: Update FyneApp.toml version
       shell: msys2 {0}
-      run: sed -i "s/^Version.*/Version = \"$(echo ${{ env.GO2TV_VERSION }} | sed 's/^v//')\"/" cmd/go2tv/FyneApp.toml
+      run: sed -i "s/^Version.*/Version = \"$GO2TV_WINDOWS_APP_VERSION\"/" cmd/go2tv/FyneApp.toml
 
     - name: Package (Windows)
       shell: msys2 {0}
       run: |
         cd cmd/go2tv
-        sed -i "s/version      = \"dev\"/version      = \"$(echo ${{ env.GO2TV_VERSION }} | sed 's/^v//')\"/" go2tv.go
+        sed -i "s/version      = \"dev\"/version      = \"$(printf '%s\n' "$GO2TV_VERSION" | sed 's/^v//')\"/" go2tv.go
         CC_BIN="$(command -v x86_64-w64-mingw32-gcc-win32 || command -v gcc)"
         CXX_BIN="$(command -v x86_64-w64-mingw32-g++-win32 || command -v g++)"
-        CGO_ENABLED=1 CC="$CC_BIN" CXX="$CXX_BIN" CGO_LDFLAGS="-static -static-libgcc -static-libstdc++ -Wl,-Bstatic -l:libstdc++.a -l:libwinpthread.a" GOFLAGS="-ldflags=-linkmode=external -ldflags=-extldflags=-static" go run github.com/alexballas/refyne/v2/cmd/fyne@latest package --release --app-id app.go2tv.go2tv --os windows --icon ../../assets/go2tv-icon-desktop-256.png
+        CGO_ENABLED=1 CC="$CC_BIN" CXX="$CXX_BIN" CGO_LDFLAGS="-static -static-libgcc -static-libstdc++ -Wl,-Bstatic -l:libstdc++.a -l:libwinpthread.a" GOFLAGS="-ldflags=-linkmode=external -ldflags=-extldflags=-static" go run github.com/alexballas/refyne/v2/cmd/fyne@latest package --release --app-id app.go2tv.go2tv --app-version "$GO2TV_WINDOWS_APP_VERSION" --os windows --icon ../../assets/go2tv-icon-desktop-256.png
         objdump -p go2tv.exe | grep "DLL Name" | tee /tmp/go2tv-imports.txt
         ! grep -Eq "libwinpthread-1.dll|libstdc\+\+-6.dll" /tmp/go2tv-imports.txt
         mv go2tv.exe ../../
 
     - uses: actions/upload-artifact@v6
       with:
-        name: go2tv_${{ env.GO2TV_VERSION }}_windows_amd64
+        name: go2tv_${{ steps.version.outputs.go2tv_version }}_windows_amd64
         path: |
           LICENSE
           README.md
