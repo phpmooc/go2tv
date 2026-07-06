@@ -1127,6 +1127,10 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 
 	var mediaStarted bool
 
+	// Stall detection state for the near-end safety net below.
+	var stallLastTime float32 = -1
+	stallTicks := 0
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1180,16 +1184,28 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 				}
 			}
 
-			// Fallback: Detect media completion when CurrentTime reaches Duration
-			if mediaStarted && status.Duration > 0 && status.CurrentTime >= status.Duration-1.5 {
-				if !screen.isChromecastActionCurrent(actionID) {
+			// Safety net: natural completion is detected via the IDLE state
+			// above once the receiver tears the session down. This catches a
+			// session that lingers reporting a frozen PLAYING position after
+			// the stream actually ends — a genuinely playing video advances
+			// on every poll.
+			nearEnd := mediaStarted && status.PlayerState == "PLAYING" &&
+				status.Duration > 0 && status.CurrentTime >= status.Duration-5
+			if nearEnd && status.CurrentTime == stallLastTime {
+				stallTicks++
+				if stallTicks >= 3 {
+					if !screen.isChromecastActionCurrent(actionID) {
+						return
+					}
+					screen.Fini()
+					if !screen.Medialoop {
+						startAfreshPlayButton(screen)
+					}
 					return
 				}
-				screen.Fini()
-				if !screen.Medialoop {
-					startAfreshPlayButton(screen)
-				}
-				return
+			} else {
+				stallLastTime = status.CurrentTime
+				stallTicks = 0
 			}
 		}
 	}

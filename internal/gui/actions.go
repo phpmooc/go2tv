@@ -1525,6 +1525,10 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 	// (screencast may briefly report IDLE after initial buffering before PLAYING).
 	var mediaStarted bool
 
+	// Stall detection state for the near-end safety net below.
+	stallLastTime := -1.0
+	stallTicks := 0
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1633,19 +1637,28 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 				})
 				screen.persistResumeProgress(int(currentTime), duration, false)
 
-				// Fallback: Detect media completion when CurrentTime reaches Duration
-				// go-chromecast doesn't always report IDLE when media finishes
-				// Using 1.5 second threshold since Chromecast stops updating ~1-2s early
-				if !isScreencast && currentTime >= duration-1.5 && duration > 0 {
-					if !screen.isChromecastActionCurrent(actionID) {
+				// Safety net: natural completion is detected via the IDLE
+				// state above once the receiver tears the session down. This
+				// catches a session that lingers reporting a frozen PLAYING
+				// position after the stream actually ends — a genuinely
+				// playing video advances on every poll.
+				nearEnd := !isScreencast && status.PlayerState == "PLAYING" && currentTime >= duration-5
+				if nearEnd && currentTime == stallLastTime {
+					stallTicks++
+					if stallTicks >= 3 {
+						if !screen.isChromecastActionCurrent(actionID) {
+							return
+						}
+						screen.Fini()
+						// Only reset UI if not looping or auto-playing next
+						if !screen.Medialoop && !screen.NextMediaCheck.Checked {
+							startAfreshPlayButton(screen)
+						}
 						return
 					}
-					screen.Fini()
-					// Only reset UI if not looping or auto-playing next
-					if !screen.Medialoop && !screen.NextMediaCheck.Checked {
-						startAfreshPlayButton(screen)
-					}
-					return
+				} else {
+					stallLastTime = currentTime
+					stallTicks = 0
 				}
 			}
 		}
