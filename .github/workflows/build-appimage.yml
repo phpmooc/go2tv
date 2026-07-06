@@ -1,0 +1,41 @@
+name: Build AppImage
+on: [push]
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set env
+      run: if grep -Fxq "devel" version.txt;then echo "GO2TV_VERSION=$(cat version.txt)";else echo "GO2TV_VERSION=v$(cat version.txt)";fi  >> $GITHUB_ENV
+
+    - uses: actions/setup-go@v6
+      with:
+        go-version: 'stable'
+
+    - name: Get dependencies
+      run: sudo apt update && sudo apt install -y xorg-dev libwayland-dev libxkbcommon-dev libegl-dev libpipewire-0.3-dev pkg-config curl wget tar xz-utils libfuse2t64
+
+    - name: Package (AppImage)
+      env:
+        APPIMAGE_EXTRACT_AND_RUN: 1
+      run: |
+        set -euo pipefail
+        make appimage-ffmpeg APPIMAGE_FFMPEG_MODE=download
+        appimage_path="$(find build -maxdepth 1 -type f -name 'Go2TV-*.AppImage' | head -n 1)"
+        if [ -z "$appimage_path" ]; then
+          echo "AppImage missing"
+          exit 1
+        fi
+        mv "$appimage_path" "go2tv_${GO2TV_VERSION}_linux_amd64_ffmpeg.AppImage"
+        chmod +x "go2tv_${GO2TV_VERSION}_linux_amd64_ffmpeg.AppImage"
+
+    - uses: actions/upload-artifact@v6
+      with:
+        name: go2tv_${{ env.GO2TV_VERSION }}_linux_amd64_ffmpeg.AppImage
+        path: go2tv_${{ env.GO2TV_VERSION }}_linux_amd64_ffmpeg.AppImage
+        retention-days: 2

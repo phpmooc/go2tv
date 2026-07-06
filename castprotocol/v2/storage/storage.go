@@ -62,7 +62,7 @@ func (s *Storage) Save(key string, data []byte) error {
 	s.cache[key] = data
 
 	cacheJson, _ := json.Marshal(s.cache)
-	os.WriteFile(s.cacheFilename, cacheJson, 0644)
+	os.WriteFile(s.cacheFilename, cacheJson, 0o644)
 
 	return nil
 }

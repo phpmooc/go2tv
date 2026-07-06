@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/test"
-	"fyne.io/fyne/v2/widget"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/test"
+	"github.com/alexballas/refyne/v2/widget"
 )
 
 func newTraversalTestScreen(t *testing.T, currentPath string) *FyneScreen {
@@ -167,6 +167,78 @@ func TestGetPreviousQueuedMediaSameTypeOnly(t *testing.T) {
 	}
 	if path != videoOne {
 		t.Fatalf("unexpected previous path: got %q want %q", path, videoOne)
+	}
+}
+
+func TestSetAutoPlaySameTypesRefreshesTraversalControls(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dir := t.TempDir()
+	videoOne := filepath.Join(dir, "01.mp4")
+	audioOne := filepath.Join(dir, "02.mp3")
+	imageOne := filepath.Join(dir, "03.jpg")
+
+	screen := newTraversalTestScreen(t, audioOne)
+	screen.ExternalMediaURL = widget.NewCheck("", nil)
+	screen.SkipPreviousButton = widget.NewButton("", nil)
+	screen.SkipNextButton = widget.NewButton("", nil)
+	screen.SkinNextOnlySameTypes = true
+	screen.SessionQueue = newSessionQueue([]QueueItem{
+		{Path: videoOne, BaseName: filepath.Base(videoOne), ParentFolder: dir, MediaType: "video"},
+		{Path: audioOne, BaseName: filepath.Base(audioOne), ParentFolder: dir, MediaType: "audio"},
+		{Path: imageOne, BaseName: filepath.Base(imageOne), ParentFolder: dir, MediaType: "image"},
+	}, 0)
+
+	screen.refreshTraversalControls()
+	fyne.DoAndWait(func() {})
+
+	if !screen.SkipPreviousButton.Disabled() {
+		t.Fatal("expected previous disabled with same-type traversal")
+	}
+	if !screen.SkipNextButton.Disabled() {
+		t.Fatal("expected next disabled with same-type traversal")
+	}
+
+	screen.setAutoPlaySameTypes(false)
+	fyne.DoAndWait(func() {})
+
+	if screen.SkipPreviousButton.Disabled() {
+		t.Fatal("expected previous enabled after disabling same-type traversal")
+	}
+	if screen.SkipNextButton.Disabled() {
+		t.Fatal("expected next enabled after disabling same-type traversal")
+	}
+}
+
+func TestSetAutoPlaySameTypesKeepsNextDisabledAtEnd(t *testing.T) {
+	app := test.NewApp()
+	defer app.Quit()
+
+	dir := t.TempDir()
+	videoOne := filepath.Join(dir, "01.mp4")
+	imageOne := filepath.Join(dir, "02.jpg")
+	audioOne := filepath.Join(dir, "03.mp3")
+
+	screen := newTraversalTestScreen(t, audioOne)
+	screen.ExternalMediaURL = widget.NewCheck("", nil)
+	screen.SkipPreviousButton = widget.NewButton("", nil)
+	screen.SkipNextButton = widget.NewButton("", nil)
+	screen.SkinNextOnlySameTypes = true
+	screen.SessionQueue = newSessionQueue([]QueueItem{
+		{Path: videoOne, BaseName: filepath.Base(videoOne), ParentFolder: dir, MediaType: "video"},
+		{Path: imageOne, BaseName: filepath.Base(imageOne), ParentFolder: dir, MediaType: "image"},
+		{Path: audioOne, BaseName: filepath.Base(audioOne), ParentFolder: dir, MediaType: "audio"},
+	}, 0)
+
+	screen.setAutoPlaySameTypes(false)
+	fyne.DoAndWait(func() {})
+
+	if screen.SkipPreviousButton.Disabled() {
+		t.Fatal("expected previous enabled after disabling same-type traversal")
+	}
+	if !screen.SkipNextButton.Disabled() {
+		t.Fatal("expected next disabled at end of playlist")
 	}
 }
 

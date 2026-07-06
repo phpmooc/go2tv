@@ -12,9 +12,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	ErrWrongDMR = errors.New("something broke somewhere - wrong DMR URL?")
-)
+var ErrWrongDMR = errors.New("something broke somewhere - wrong DMR URL?")
 
 type serviceNode struct {
 	Type        string `xml:"serviceType"`

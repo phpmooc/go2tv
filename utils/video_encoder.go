@@ -89,6 +89,11 @@ func transcodeSoftwareEncoderPlan(profile videoEncoderProfile) videoEncoderPlan 
 
 func transcodeHardwareEncoderCandidates(profile videoEncoderProfile) []videoEncoderPlan {
 	switch runtime.GOOS {
+	case "android":
+		return []videoEncoderPlan{
+			transcodeHardwareEncoderPlan(profile, "h264_mediacodec", nil),
+			transcodeHardwareEncoderPlan(profile, "h264_v4l2m2m", nil),
+		}
 	case "darwin":
 		return []videoEncoderPlan{
 			transcodeHardwareEncoderPlan(profile, "h264_videotoolbox", nil),
@@ -186,10 +191,16 @@ func transcodeSoftwareCodecArgs(profile videoEncoderProfile) []string {
 func transcodeHardwareCodecArgs(profile videoEncoderProfile, codec string) []string {
 	switch profile {
 	case videoEncoderProfileDLNA:
-		return []string{
+		args := []string{
 			"-c:v", codec,
 			"-g", "30",
 		}
+		// MediaCodec/V4L2 M2M default to very low bitrates, producing
+		// blocky output; request a proper streaming bitrate explicitly.
+		if codec == "h264_mediacodec" || codec == "h264_v4l2m2m" {
+			args = append(args, "-b:v", "5M", "-maxrate", "10M", "-bufsize", "20M")
+		}
+		return args
 	case videoEncoderProfileChromecastRaw:
 		return []string{
 			"-c:v", codec,
@@ -251,7 +262,8 @@ func probeTranscodeVideoEncoder(ffmpegPath string, plan videoEncoderPlan) error 
 		"-nostdin",
 	}
 	args = append(args, plan.globalArgs...)
-	args = append(args,
+	args = append(
+		args,
 		"-f", "lavfi",
 		"-i", "color=c=black:s=1280x720:r=30:d=0.5",
 		"-an",

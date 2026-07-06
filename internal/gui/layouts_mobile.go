@@ -3,7 +3,7 @@
 package gui
 
 import (
-	"fyne.io/fyne/v2"
+	"github.com/alexballas/refyne/v2"
 )
 
 type mainButtonsLayout struct {

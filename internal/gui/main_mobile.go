@@ -9,12 +9,12 @@ import (
 	"sort"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/container"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/layout"
+	"github.com/alexballas/refyne/v2/theme"
+	"github.com/alexballas/refyne/v2/widget"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
@@ -78,7 +78,6 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		})
 
 		blockGetDevices <- struct{}{}
-
 	}()
 
 	mfiletext := widget.NewEntry()
@@ -126,6 +125,9 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 
 	externalmedia := widget.NewCheck(lang.L("Media from URL"), func(b bool) {})
 	medialoop := widget.NewCheck(lang.L("Loop Selected"), func(b bool) {})
+	transcode := widget.NewCheck(lang.L("Transcode"), func(b bool) {
+		s.Transcode = b
+	})
 
 	mediafilelabel := widget.NewLabel(lang.L("Media File") + ":")
 	subsfilelabel := widget.NewLabel(lang.L("Subtitles") + ":")
@@ -135,6 +137,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	s.Stop = stop
 	s.MuteUnmute = muteunmute
 	s.ExternalMediaURL = externalmedia
+	s.TranscodeCheckBox = transcode
 	s.MediaText = mfiletext
 	s.SubsText = sfiletext
 	s.DeviceList = list
@@ -146,7 +149,13 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		volumeup,
 		stop)
 
-	checklists := container.NewHBox(externalmedia, medialoop)
+	checklistItems := []fyne.CanvasObject{externalmedia, medialoop}
+	if err := utils.CheckFFmpeg(s.ffmpegPath); err == nil {
+		checklistItems = append(checklistItems, transcode)
+	}
+	// Two columns so a third option wraps to a new row instead of
+	// overflowing the window width on portrait phone screens.
+	checklists := container.New(layout.NewGridLayout(2), checklistItems...)
 	mediasubsbuttons := container.New(layout.NewGridLayout(2), mfile, sfile)
 	sfiletextArea := container.New(layout.NewBorderLayout(nil, nil, nil, clearsubs), clearsubs, sfiletext)
 	mfiletextArea := container.New(layout.NewBorderLayout(nil, nil, nil, clearmedia), clearmedia, mfiletext)

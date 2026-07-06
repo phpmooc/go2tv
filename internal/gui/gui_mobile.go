@@ -5,23 +5,23 @@ package gui
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/app"
+	"github.com/alexballas/refyne/v2/container"
+	"github.com/alexballas/refyne/v2/dialog"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/theme"
+	"github.com/alexballas/refyne/v2/widget"
 	"github.com/pkg/errors"
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
 	"go2tv.app/go2tv/v2/internal/crashlog"
 	"go2tv.app/go2tv/v2/soapcalls"
+	"go2tv.app/go2tv/v2/utils"
 )
 
 // FyneScreen .
@@ -60,6 +60,9 @@ type FyneScreen struct {
 	version              string
 	mediaFormats         []string
 	tempMediaFile        string // Temp file path for mobile media serving (cleanup on stop)
+	tempSubsFile         string // Temp subtitle path for ffmpeg burn-in (cleanup on stop)
+	ffmpegPath           string
+	mediaDuration        float64
 	Transcode            bool
 	Medialoop            bool
 	castingMediaType     string // MIME type of currently casting media
@@ -80,11 +83,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 	w := s.Current
 
 	// Clean up orphaned temp files from previous crashes
-	if files, err := filepath.Glob(filepath.Join(os.TempDir(), "go2tv-*")); err == nil {
-		for _, f := range files {
-			os.Remove(f)
-		}
-	}
+	cleanupMobileCacheTempFiles()
 
 	devices.StartDiscovery(ctx)
 
@@ -239,11 +238,13 @@ func NewFyneScreen(version string, crash *crashlog.Session) *FyneScreen {
 	dw := newDebugWriter(runtimeDebugRingSize)
 	discoveryDebug := newDebugWriter(discoveryDebugRingSize)
 	devices.SetDiscoveryLogOutput(discoveryDebug)
+	ffmpegPath, _ := utils.ResolveFFmpegPath("")
 
 	return &FyneScreen{
 		Current:          w,
 		Debug:            dw,
 		DiscoveryDebug:   discoveryDebug,
+		ffmpegPath:       ffmpegPath,
 		mediaFormats:     []string{".mp4", ".avi", ".mkv", ".mpeg", ".mov", ".webm", ".m4v", ".mpv", ".dv", ".mp3", ".flac", ".wav", ".m4a", ".jpg", ".jpeg", ".png"},
 		version:          version,
 		Crash:            crash,

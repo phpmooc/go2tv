@@ -11,14 +11,14 @@ import (
 	"sync"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
+	ttwidget "github.com/alexballas/fyne-tooltip/widget"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/container"
+	"github.com/alexballas/refyne/v2/data/binding"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/layout"
+	"github.com/alexballas/refyne/v2/theme"
+	"github.com/alexballas/refyne/v2/widget"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
@@ -310,15 +310,22 @@ func (t *tappedSlider) seekDLNAAsync() {
 		fyne.Do(func() {
 			t.screen.CurrentPos.Set(reltime)
 			t.screen.EndPos.Set(end)
-			if isTranscode {
-				t.screen.ffmpegSeek = roundedInt
-				t.screen.dlnaSeekRestart = true
-			}
 		})
 
 		if isTranscode {
-			stopAction(t.screen)
+			// playAction reads these from its own goroutine, so set them
+			// here instead of inside the queued fyne.Do above.
+			t.screen.ffmpegSeek = roundedInt
+			t.screen.dlnaSeekRestart = true
+
+			// Live-transcoded streams are advertised as non-seekable
+			// (DLNA.ORG_OP=00), so renderers reject Seek with error 701.
+			// Restart the session at the new offset instead, waiting for
+			// the old session's teardown so its Stop cannot race with the
+			// new SetAVTransportURI/Play.
+			stopActionSync(t.screen)
 			playAction(t.screen)
+			return
 		}
 
 		_ = tvdata.SeekSoapCall(reltime)
@@ -510,7 +517,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 	s.transcodeToolTipCheck = transcode
 	s.screencastToolTipCheck = screencast
 	s.rtmpServerToolTipCheck = rtmpServerCheck
-	if err := utils.CheckFFmpeg(s.ffmpegPath); err != nil {
+	if err := s.ffmpegStatus(); err != nil {
 		s.rtmpServerCheck.Disable()
 		screencast.Disable()
 	}
@@ -617,7 +624,8 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 		layout.NewSpacer(),
 		volumedown,
 		muteunmute,
-		volumeup)
+		volumeup,
+	)
 
 	mrightwidgets := container.NewHBox(previewmedia, clearmedia, mbrowse)
 	srightwidgets := container.NewHBox(selectInternalSubs, clearsubs, sbrowse)
@@ -709,7 +717,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 
 	screencast.OnChanged = func(b bool) {
 		if b {
-			if err := utils.CheckFFmpeg(s.ffmpegPath); err != nil {
+			if err := s.validateFFmpeg(); err != nil {
 				check(s, errors.New(lang.L("ffmpeg is required for screencast")))
 				screencast.SetChecked(false)
 				return
@@ -753,7 +761,7 @@ func mainWindow(s *FyneScreen) fyne.CanvasObject {
 
 		s.Screencast = false
 		go stopScreencastSession(s)
-		if err := utils.CheckFFmpeg(s.ffmpegPath); err == nil && s.rtmpServer == nil {
+		if err := s.ffmpegStatus(); err == nil && s.rtmpServer == nil {
 			transcode.Enable()
 			externalmedia.Enable()
 			sfilecheck.Enable()

@@ -21,7 +21,98 @@ func TestResolveFFmpegPathPreferredAbsolute(t *testing.T) {
 	}
 }
 
+func TestResolveFFmpegPathUsesPlatformHookForDefault(t *testing.T) {
+	oldHook := platformFFmpegPath
+	t.Cleanup(func() {
+		platformFFmpegPath = oldHook
+	})
+
+	ffmpegPath := filepath.Join(t.TempDir(), "libffmpeg.so")
+	platformFFmpegPath = func() (string, error) {
+		return ffmpegPath, nil
+	}
+
+	got, err := ResolveFFmpegPath("")
+	if err != nil {
+		t.Fatalf("ResolveFFmpegPath() error = %v", err)
+	}
+
+	if got != ffmpegPath {
+		t.Fatalf("ResolveFFmpegPath() = %q, want %q", got, ffmpegPath)
+	}
+}
+
+func TestResolveFFmpegPathPreferredBypassesPlatformHook(t *testing.T) {
+	oldHook := platformFFmpegPath
+	t.Cleanup(func() {
+		platformFFmpegPath = oldHook
+	})
+
+	platformFFmpegPath = func() (string, error) {
+		return filepath.Join(t.TempDir(), "libffmpeg.so"), nil
+	}
+
+	ffmpegPath := filepath.Join(t.TempDir(), "ffmpeg")
+	writeExecutableFile(t, ffmpegPath)
+
+	got, err := ResolveFFmpegPath(ffmpegPath)
+	if err != nil {
+		t.Fatalf("ResolveFFmpegPath() error = %v", err)
+	}
+
+	if got != ffmpegPath {
+		t.Fatalf("ResolveFFmpegPath() = %q, want %q", got, ffmpegPath)
+	}
+}
+
 func TestResolveFFprobePathUsesFFmpegSibling(t *testing.T) {
+	dir := t.TempDir()
+	ffmpegPath := filepath.Join(dir, "ffmpeg")
+	ffprobePath := filepath.Join(dir, "ffprobe")
+	writeExecutableFile(t, ffmpegPath)
+	writeExecutableFile(t, ffprobePath)
+
+	got, err := ResolveFFprobePath(ffmpegPath)
+	if err != nil {
+		t.Fatalf("ResolveFFprobePath() error = %v", err)
+	}
+
+	if got != ffprobePath {
+		t.Fatalf("ResolveFFprobePath() = %q, want %q", got, ffprobePath)
+	}
+}
+
+func TestResolveFFprobePathUsesPlatformHook(t *testing.T) {
+	oldHook := platformFFprobePath
+	t.Cleanup(func() {
+		platformFFprobePath = oldHook
+	})
+
+	ffprobePath := filepath.Join(t.TempDir(), "libffprobe.so")
+	platformFFprobePath = func() (string, error) {
+		return ffprobePath, nil
+	}
+
+	got, err := ResolveFFprobePath(filepath.Join(t.TempDir(), "libffmpeg.so"))
+	if err != nil {
+		t.Fatalf("ResolveFFprobePath() error = %v", err)
+	}
+
+	if got != ffprobePath {
+		t.Fatalf("ResolveFFprobePath() = %q, want %q", got, ffprobePath)
+	}
+}
+
+func TestResolveFFprobePathPreferredBypassesPlatformHook(t *testing.T) {
+	oldHook := platformFFprobePath
+	t.Cleanup(func() {
+		platformFFprobePath = oldHook
+	})
+
+	platformFFprobePath = func() (string, error) {
+		return filepath.Join(t.TempDir(), "libffprobe.so"), nil
+	}
+
 	dir := t.TempDir()
 	ffmpegPath := filepath.Join(dir, "ffmpeg")
 	ffprobePath := filepath.Join(dir, "ffprobe")

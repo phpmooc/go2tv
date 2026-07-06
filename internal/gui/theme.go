@@ -3,17 +3,15 @@ package gui
 import (
 	"image/color"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/theme"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/theme"
 )
 
 type go2tvTheme struct {
 	Theme string
 }
 
-var (
-	_ fyne.Theme = go2tvTheme{}
-)
+var _ fyne.Theme = go2tvTheme{}
 
 func (m go2tvTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
 	switch {

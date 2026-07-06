@@ -14,24 +14,31 @@ import (
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/canvas"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/storage"
+	"github.com/alexballas/refyne/v2/theme"
 	xfilepicker "github.com/alexballas/xfilepicker/dialog"
 	"github.com/pkg/errors"
 	"github.com/skratchdot/open-golang/open"
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/playback"
 	"go2tv.app/go2tv/v2/rtmp"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
 	"go2tv.app/screencast/hls"
 )
 
-const filePickerFillSize = 10000
+const (
+	filePickerFillSize      = 10000
+	imagePreviewMinWidth    = 160
+	imagePreviewMinHeight   = 120
+	imagePreviewStartWidth  = 800
+	imagePreviewStartHeight = 600
+)
 
 func armChromecastImageAutoSkipAfterReady(screen *FyneScreen, client *castprotocol.CastClient, actionID uint64, mediaType, mediaPath string) {
 	if !strings.HasPrefix(mediaType, "image/") {
@@ -856,7 +863,6 @@ func playAction(screen *FyneScreen) {
 				go screen.GaplessMediaWatcher(serverStoppedCTX, screen, newTVPayload)
 			}
 		}
-
 	}()
 
 	go func() {
@@ -883,11 +889,10 @@ func playAction(screen *FyneScreen) {
 			screen.updateScreenState("Paused")
 		}
 	}()
-
 }
 
 func startChromecastScreencast(screen *FyneScreen) (string, string, context.Context, error) {
-	if err := utils.CheckFFmpeg(screen.ffmpegPath); err != nil {
+	if err := screen.validateFFmpeg(); err != nil {
 		return "", "", nil, errors.New(lang.L("ffmpeg is required for screencast"))
 	}
 
@@ -1135,6 +1140,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	var mediaURL string
 	var mediaType string
 	serverStoppedCTX := context.Background()
+	subtitleHost := ""
 
 	if screen.ExternalMediaURL.Checked {
 		mediaURL = screen.MediaText.Text
@@ -1153,19 +1159,16 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			}
 			mediaType = inferredMediaType
 			mediaURLinfo.Close()
-			if utils.IsHLSStream(mediaURL, mediaType) {
-				transcode = false
+
+			wasTranscode := transcode
+			transcode = playback.ChromecastExternalURLPolicy(mediaURL, mediaType, transcode, screen.subsfile).Transcode
+			if wasTranscode && !transcode {
+				screen.Transcode = false
 				fyne.Do(func() {
 					if screen.TranscodeCheckBox != nil && screen.TranscodeCheckBox.Checked {
 						screen.TranscodeCheckBox.SetChecked(false)
 					}
 				})
-			}
-
-			// Chromecast handles images and audio natively - never transcode these
-			mediaTypeSlice := strings.Split(mediaType, "/")
-			if len(mediaTypeSlice) > 0 && (mediaTypeSlice[0] == "image" || mediaTypeSlice[0] == "audio") {
-				transcode = false
 			}
 
 			// Set casting media type
@@ -1249,10 +1252,48 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 				mediaType = "video/mp4"
 			}
 		} else {
-			var cancel context.CancelFunc
-			serverStoppedCTX, cancel = context.WithCancel(context.Background())
-			screen.serverStopCTX = serverStoppedCTX
-			go func() { <-serverStoppedCTX.Done(); cancel() }()
+			_, hasSubtitles := playback.ChromecastSubtitlePath(screen.subsfile)
+			if hasSubtitles {
+				whereToListen, err := utils.URLtoListenIPandPort(sessionDevice.addr)
+				if err != nil {
+					check(screen, err)
+					startAfreshPlayButton(screen)
+					return
+				}
+
+				if screen.httpserver != nil {
+					screen.httpserver.StopServer()
+				}
+
+				screen.httpserver = httphandlers.NewServer(whereToListen)
+				serverStarted := make(chan error)
+				var serverCTXStop context.CancelFunc
+				serverStoppedCTX, serverCTXStop = context.WithCancel(context.Background())
+				screen.serverStopCTX = serverStoppedCTX
+				screen.cancelServerStop = serverCTXStop
+				subtitleHost = whereToListen
+
+				go func() {
+					screen.httpserver.StartServing(serverStarted)
+					serverCTXStop()
+				}()
+
+				if err := <-serverStarted; err != nil {
+					check(screen, err)
+					startAfreshPlayButton(screen)
+					return
+				}
+			} else {
+				if screen.httpserver != nil {
+					screen.httpserver.StopServer()
+					screen.httpserver = nil
+				}
+
+				var cancel context.CancelFunc
+				serverStoppedCTX, cancel = context.WithCancel(context.Background())
+				screen.serverStopCTX = serverStoppedCTX
+				screen.cancelServerStop = cancel
+			}
 		}
 
 	} else if screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked {
@@ -1355,22 +1396,26 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 	var subtitleURL string
 	isRTMP := screen.rtmpServerCheck != nil && screen.rtmpServerCheck.Checked
 	if screen.subsfile != "" && screen.httpserver != nil && (!transcode || isRTMP) {
-		// Extract host:port from mediaURL to ensure subtitle uses same server
-		mediaURLParsed, err := url.Parse(mediaURL)
-		if err == nil && mediaURLParsed.Host != "" {
-			ext := strings.ToLower(filepath.Ext(screen.subsfile))
+		if subtitleHost == "" {
+			mediaURLParsed, err := url.Parse(mediaURL)
+			if err == nil {
+				subtitleHost = mediaURLParsed.Host
+			}
+		}
+		if subtitlesPath, ok := playback.ChromecastSubtitlePath(screen.subsfile); ok && subtitleHost != "" {
+			ext := strings.ToLower(filepath.Ext(subtitlesPath))
 			switch ext {
 			case ".srt":
-				webvttData, err := utils.ConvertSRTtoWebVTT(screen.subsfile)
+				webvttData, err := utils.ConvertSRTtoWebVTT(subtitlesPath)
 				if err != nil {
 					check(screen, fmt.Errorf("subtitle conversion: %w", err))
 				} else {
 					screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, webvttData)
-					subtitleURL = "http://" + mediaURLParsed.Host + "/subtitles.vtt"
+					subtitleURL = "http://" + subtitleHost + "/subtitles.vtt"
 				}
 			case ".vtt":
-				screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, screen.subsfile)
-				subtitleURL = "http://" + mediaURLParsed.Host + "/subtitles.vtt"
+				screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, subtitlesPath)
+				subtitleURL = "http://" + subtitleHost + "/subtitles.vtt"
 			}
 		}
 	}
@@ -1480,6 +1525,10 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 	// (screencast may briefly report IDLE after initial buffering before PLAYING).
 	var mediaStarted bool
 
+	// Stall detection state for the near-end safety net below.
+	stallLastTime := -1.0
+	stallTicks := 0
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -1588,19 +1637,28 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 				})
 				screen.persistResumeProgress(int(currentTime), duration, false)
 
-				// Fallback: Detect media completion when CurrentTime reaches Duration
-				// go-chromecast doesn't always report IDLE when media finishes
-				// Using 1.5 second threshold since Chromecast stops updating ~1-2s early
-				if !isScreencast && currentTime >= duration-1.5 && duration > 0 {
-					if !screen.isChromecastActionCurrent(actionID) {
+				// Safety net: natural completion is detected via the IDLE
+				// state above once the receiver tears the session down. This
+				// catches a session that lingers reporting a frozen PLAYING
+				// position after the stream actually ends — a genuinely
+				// playing video advances on every poll.
+				nearEnd := !isScreencast && status.PlayerState == "PLAYING" && currentTime >= duration-5
+				if nearEnd && currentTime == stallLastTime {
+					stallTicks++
+					if stallTicks >= 3 {
+						if !screen.isChromecastActionCurrent(actionID) {
+							return
+						}
+						screen.Fini()
+						// Only reset UI if not looping or auto-playing next
+						if !screen.Medialoop && !screen.NextMediaCheck.Checked {
+							startAfreshPlayButton(screen)
+						}
 						return
 					}
-					screen.Fini()
-					// Only reset UI if not looping or auto-playing next
-					if !screen.Medialoop && !screen.NextMediaCheck.Checked {
-						startAfreshPlayButton(screen)
-					}
-					return
+				} else {
+					stallLastTime = currentTime
+					stallTicks = 0
 				}
 			}
 		}
@@ -1668,21 +1726,26 @@ out:
 				}
 
 				if nextURI == "" {
-					if screen.tvdata == nil {
+					// Stop/skip actions clear these fields from another
+					// goroutine before this watcher's context is cancelled,
+					// so snapshot both and skip the tick if either is gone.
+					tvdata := screen.tvdata
+					srv := screen.httpserver
+					if tvdata == nil || srv == nil {
 						continue
 					}
 
 					// No need to check for the error as this is something
 					// that we did in previous steps in our workflow
-					mPath, _ := url.Parse(screen.tvdata.MediaURL)
-					sPath, _ := url.Parse(screen.tvdata.SubtitlesURL)
+					mPath, _ := url.Parse(tvdata.MediaURL)
+					sPath, _ := url.Parse(tvdata.SubtitlesURL)
 
 					// Make sure we clean up after ourselves and avoid
 					// leaving any dangling handlers. Given the nextURI is ""
 					// we know that the previously playing media entry was
 					// replaced by the one in the NextURI entry.
-					screen.httpserver.RemoveHandler(mPath.Path)
-					screen.httpserver.RemoveHandler(sPath.Path)
+					srv.RemoveHandler(mPath.Path)
+					srv.RemoveHandler(sPath.Path)
 
 					_, mediaPath, err := getNextAutoPlayMediaOrError(screen)
 					if err != nil {
@@ -1824,17 +1887,20 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			// Set casting media type
 			screen.SetMediaType(mediaType)
 
-			// Get server address
-			whereToListen := screen.httpserver.GetAddr()
+			// Get server address. A concurrent stop action may have already
+			// cleared the field, in which case there is nothing to skip to.
+			server := screen.httpserver
+			if server == nil {
+				return
+			}
+			whereToListen := server.GetAddr()
 
 			var mediaURL string
 			var subtitleURL string
 
 			if transcode {
 				// TRANSCODING PATH: Stop server and restart with new file and transcode options
-				if screen.httpserver != nil {
-					screen.httpserver.StopServer()
-				}
+				server.StopServer()
 
 				// Get actual media duration from ffprobe (Chromecast can't report it for transcoded streams)
 				if duration, err := utils.DurationForMediaSeconds(screen.ffmpegPath, screen.mediafile); err == nil {
@@ -1856,7 +1922,8 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				}
 
 				// Create new HTTP server with transcoding
-				screen.httpserver = httphandlers.NewServer(whereToListen)
+				server = httphandlers.NewServer(whereToListen)
+				screen.httpserver = server
 				serverStarted := make(chan error)
 				var serverCTXStop context.CancelFunc
 				serverStoppedCTX, serverCTXStop = context.WithCancel(context.Background())
@@ -1864,7 +1931,7 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				screen.cancelServerStop = serverCTXStop
 
 				go func() {
-					screen.httpserver.StartSimpleServerWithTranscode(serverStarted, screen.mediafile, tcOpts)
+					server.StartSimpleServerWithTranscode(serverStarted, screen.mediafile, tcOpts)
 					serverCTXStop()
 				}()
 
@@ -1884,18 +1951,18 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				screen.mediaDuration = 0
 
 				// Get subtitle URL if needed (remove old handler first)
-				screen.httpserver.RemoveHandler("/subtitles.vtt")
+				server.RemoveHandler("/subtitles.vtt")
 				if screen.subsfile != "" {
 					ext := strings.ToLower(filepath.Ext(screen.subsfile))
 					switch ext {
 					case ".srt":
 						webvttData, err := utils.ConvertSRTtoWebVTT(screen.subsfile)
 						if err == nil {
-							screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, webvttData)
+							server.AddHandler("/subtitles.vtt", nil, nil, webvttData)
 							subtitleURL = "http://" + whereToListen + "/subtitles.vtt"
 						}
 					case ".vtt":
-						screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, screen.subsfile)
+						server.AddHandler("/subtitles.vtt", nil, nil, screen.subsfile)
 						subtitleURL = "http://" + whereToListen + "/subtitles.vtt"
 					}
 				}
@@ -1905,8 +1972,8 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				// URL uses ConvertFilename (encoded) for valid HTTP URL with special characters
 				oldHandlerPath := "/" + filepath.Base(oldMediaPath)
 				newHandlerPath := "/" + filepath.Base(screen.mediafile)
-				screen.httpserver.RemoveHandler(oldHandlerPath)
-				screen.httpserver.AddHandler(newHandlerPath, nil, nil, screen.mediafile)
+				server.RemoveHandler(oldHandlerPath)
+				server.AddHandler(newHandlerPath, nil, nil, screen.mediafile)
 
 				// Build media URL using URL-encoded filename (for special chars like brackets)
 				mediaURL = "http://" + whereToListen + "/" + utils.ConvertFilename(screen.mediafile)
@@ -1936,7 +2003,6 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			setPlayPauseView("Pause", screen)
 			armChromecastImageAutoSkipAfterReady(screen, client, actionID, mediaType, screen.mediafile)
 			go chromecastStatusWatcher(serverStoppedCTX, screen, actionID)
-
 		}()
 		return
 	}
@@ -1991,9 +2057,10 @@ func previewmedia(screen *FyneScreen) {
 			img := canvas.NewImageFromFile(screen.mediafile)
 			img.FillMode = canvas.ImageFillContain
 			img.ScaleMode = canvas.ImageScaleFastest
+			img.SetMinSize(fyne.NewSize(imagePreviewMinWidth, imagePreviewMinHeight))
 			imgw := fyne.CurrentApp().NewWindow(filepath.Base(screen.mediafile))
 			imgw.SetContent(img)
-			imgw.Resize(fyne.NewSize(800, 600))
+			imgw.Resize(fyne.NewSize(imagePreviewStartWidth, imagePreviewStartHeight))
 			imgw.CenterOnScreen()
 			imgw.Show()
 		})
@@ -2006,6 +2073,18 @@ func previewmedia(screen *FyneScreen) {
 }
 
 func stopAction(screen *FyneScreen) {
+	stopActionInternal(screen, false)
+}
+
+// stopActionSync behaves like stopAction but waits for the DLNA network
+// teardown (Stop call and HTTP server shutdown) to complete before returning.
+// The transcoded seek restart needs this ordering: a Stop that races with the
+// next session's SetAVTransportURI/Play makes renderers drop the new session.
+func stopActionSync(screen *FyneScreen) {
+	stopActionInternal(screen, true)
+}
+
+func stopActionInternal(screen *FyneScreen, wait bool) {
 	screen.persistDisplayedResumeProgress(true)
 	screen.clearResumeSession()
 	chromecastClient := screen.chromecastSessionClient()
@@ -2069,8 +2148,7 @@ func stopAction(screen *FyneScreen) {
 	screen.tvdata = nil
 	screen.httpserver = nil
 
-	// Run blocking network operations in background
-	go func() {
+	teardown := func() {
 		if tvdata != nil && tvdata.ControlURL != "" {
 			_ = tvdata.SendtoTV("Stop")
 		}
@@ -2078,8 +2156,15 @@ func stopAction(screen *FyneScreen) {
 			server.StopServer()
 		}
 		stopScreencastSession(screen)
-	}()
+	}
 
+	if wait {
+		teardown()
+		return
+	}
+
+	// Run blocking network operations in background
+	go teardown()
 }
 
 func getDevices() ([]devType, error) {
@@ -2413,7 +2498,7 @@ func resetRTMPUI(screen *FyneScreen) {
 	}
 
 	screen.ClearMedia.Enable()
-	if err := utils.CheckFFmpeg(screen.ffmpegPath); err == nil {
+	if err := screen.ffmpegStatus(); err == nil {
 		if !screen.Screencast {
 			screen.TranscodeCheckBox.Enable()
 		}

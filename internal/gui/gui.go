@@ -14,17 +14,17 @@ import (
 	"sync"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/data/binding"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
-	fynetooltip "github.com/dweymouth/fyne-tooltip"
-	ttwidget "github.com/dweymouth/fyne-tooltip/widget"
+	fynetooltip "github.com/alexballas/fyne-tooltip"
+	ttwidget "github.com/alexballas/fyne-tooltip/widget"
+	fyne "github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/app"
+	"github.com/alexballas/refyne/v2/container"
+	"github.com/alexballas/refyne/v2/data/binding"
+	"github.com/alexballas/refyne/v2/dialog"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/storage"
+	"github.com/alexballas/refyne/v2/theme"
+	"github.com/alexballas/refyne/v2/widget"
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
@@ -98,6 +98,10 @@ type FyneScreen struct {
 	muError                  sync.RWMutex
 	mu                       sync.RWMutex
 	ffmpegPathChanged        bool
+	ffmpegCheckPath          string
+	ffmpegCheckErr           error
+	ffmpegCheckValid         bool
+	ffmpegCheckDirty         bool
 	Medialoop                bool
 	sliderActive             bool
 	dlnaSeekRestart          bool
@@ -179,7 +183,7 @@ func (s *FyneScreen) updateFFmpegDependentCheckTooltips() {
 		return
 	}
 
-	ffmpegMissing := utils.CheckFFmpeg(s.ffmpegPath) != nil
+	ffmpegMissing := s.ffmpegCheckValid && !s.ffmpegCheckDirty && s.ffmpegCheckPath == s.ffmpegPath && s.ffmpegCheckErr != nil
 	toolTipMsg := lang.L("ffmpeg is required. install it or update ffmpeg path in Settings")
 
 	setToolTip := func(ttCheck *ttwidget.Check, baseCheck *widget.Check) {
@@ -196,6 +200,40 @@ func (s *FyneScreen) updateFFmpegDependentCheckTooltips() {
 	setToolTip(s.transcodeToolTipCheck, s.TranscodeCheckBox)
 	setToolTip(s.screencastToolTipCheck, s.ScreencastCheckBox)
 	setToolTip(s.rtmpServerToolTipCheck, s.rtmpServerCheck)
+}
+
+func (s *FyneScreen) markFFmpegPathChanged() {
+	if s == nil {
+		return
+	}
+
+	s.ffmpegPathChanged = true
+	s.ffmpegCheckDirty = true
+}
+
+func (s *FyneScreen) ffmpegStatus() error {
+	if s == nil {
+		return nil
+	}
+
+	if !s.ffmpegCheckValid || s.ffmpegCheckDirty || s.ffmpegCheckPath != s.ffmpegPath {
+		return s.validateFFmpeg()
+	}
+
+	return s.ffmpegCheckErr
+}
+
+func (s *FyneScreen) validateFFmpeg() error {
+	if s == nil {
+		return nil
+	}
+
+	err := utils.CheckFFmpeg(s.ffmpegPath)
+	s.ffmpegCheckPath = s.ffmpegPath
+	s.ffmpegCheckErr = err
+	s.ffmpegCheckValid = true
+	s.ffmpegCheckDirty = false
+	return err
 }
 
 //go:embed translations
@@ -240,7 +278,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 				s.TranscodeCheckBox.Disable()
 			}
 
-			ffmpegErr := utils.CheckFFmpeg(s.ffmpegPath)
+			ffmpegErr := s.ffmpegStatus()
 			if ffmpegErr != nil {
 				s.TranscodeCheckBox.SetChecked(false)
 				s.TranscodeCheckBox.Disable()
@@ -262,9 +300,11 @@ func Start(ctx context.Context, s *FyneScreen) {
 			s.updateFFmpegDependentCheckTooltips()
 
 			if s.ffmpegPathChanged {
-				furi, err := storage.ParseURI("file://" + s.mediafile)
-				if err == nil {
-					selectMediaFile(s, furi)
+				if ffmpegErr == nil && s.mediafile != "" {
+					furi, err := storage.ParseURI("file://" + s.mediafile)
+					if err == nil {
+						selectMediaFile(s, furi)
+					}
 				}
 				s.ffmpegPathChanged = false
 			}
@@ -276,7 +316,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 
 	s.ffmpegPathChanged = false
 
-	if err := utils.CheckFFmpeg(s.ffmpegPath); err != nil {
+	if err := s.ffmpegStatus(); err != nil {
 		s.TranscodeCheckBox.Disable()
 		if s.ScreencastCheckBox != nil {
 			s.ScreencastCheckBox.Disable()
@@ -289,7 +329,7 @@ func Start(ctx context.Context, s *FyneScreen) {
 
 	w.SetContent(fynetooltip.AddWindowToolTipLayer(tabs, w.Canvas()))
 	minSize := tabs.MinSize()
-	w.Resize(fyne.NewSize(fyne.Max(1000, minSize.Width), minSize.Height+(theme.Padding()*4)))
+	w.Resize(fyne.NewSize(fyne.Max(1000, minSize.Width), minSize.Height))
 	w.CenterOnScreen()
 	w.SetMaster()
 
@@ -330,7 +370,6 @@ func Start(ctx context.Context, s *FyneScreen) {
 	showPendingCrashPopup(s)
 
 	w.ShowAndRun()
-
 }
 
 // EmitMsg Method to implement the screen interface
@@ -443,13 +482,11 @@ func getAdjacentQueuedMedia(screen *FyneScreen, delta int, wrap bool) (string, s
 		return "", "", errors.New(lang.L("queue is empty"))
 	}
 
-	if queue.CurrentIndex < 0 || queue.CurrentIndex >= len(queue.Items) {
-		currentIndex := queue.indexByPath(screen.mediafile)
-		if currentIndex == -1 {
-			return "", "", errors.New(lang.L("current media file is not in the queue"))
-		}
-		queue.CurrentIndex = currentIndex
+	currentIndex := queue.indexByPath(screen.mediafile)
+	if currentIndex == -1 {
+		return "", "", errors.New(lang.L("current media file is not in the queue"))
 	}
+	queue.CurrentIndex = currentIndex
 
 	nextIndex := queue.adjacentIndex(delta, screen.SkinNextOnlySameTypes, wrap)
 	if nextIndex == -1 {
@@ -712,7 +749,7 @@ func (p *FyneScreen) checkChromecastCompatibility() {
 	if p.chromecastCheckedFile == p.mediafile {
 		return
 	}
-	if err := utils.CheckFFmpeg(p.ffmpegPath); err != nil {
+	if err := p.ffmpegStatus(); err != nil {
 		return // Can't transcode anyway
 	}
 

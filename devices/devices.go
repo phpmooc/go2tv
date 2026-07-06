@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -106,21 +107,19 @@ func formatSummaryList(values []string, maxItems int) string {
 		return ""
 	}
 
-	sorted := append([]string(nil), values...)
-	sort.Strings(sorted)
-	unique := sorted[:0]
-	for _, value := range sorted {
-		if len(unique) > 0 && unique[len(unique)-1] == value {
-			continue
-		}
-		unique = append(unique, value)
+	items := slices.Clone(values)
+	slices.Sort(items)
+	items = slices.Compact(items)
+
+	if maxItems <= 0 || len(items) <= maxItems {
+		return strings.Join(items, ",")
 	}
 
-	if maxItems <= 0 || len(unique) <= maxItems {
-		return strings.Join(unique, ",")
-	}
-
-	return fmt.Sprintf("%s,+%d more", strings.Join(unique[:maxItems], ","), len(unique)-maxItems)
+	return fmt.Sprintf(
+		"%s,+%d more",
+		strings.Join(items[:maxItems], ","),
+		len(items)-maxItems,
+	)
 }
 
 func deviceNames(devices []Device, maxItems int) string {
@@ -360,7 +359,7 @@ func refreshDLNADevices(delay int) {
 
 func setDLNADevices(devices []Device) {
 	dlnaMu.Lock()
-	dlnaDevices = append([]Device(nil), devices...)
+	dlnaDevices = slices.Clone(devices)
 	dlnaMu.Unlock()
 }
 
@@ -368,8 +367,9 @@ func getDLNADevices() []Device {
 	dlnaMu.RLock()
 	defer dlnaMu.RUnlock()
 
-	return append([]Device(nil), dlnaDevices...)
+	return slices.Clone(dlnaDevices)
 }
+
 func isDLNADeviceCastable(dev *soapcalls.DMRextracted) bool {
 	if dev == nil {
 		return false

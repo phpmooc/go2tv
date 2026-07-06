@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/canvas"
+	"github.com/alexballas/refyne/v2/container"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/layout"
+	"github.com/alexballas/refyne/v2/storage"
+	"github.com/alexballas/refyne/v2/theme"
+	"github.com/alexballas/refyne/v2/widget"
 	xfilepicker "github.com/alexballas/xfilepicker/dialog"
 )
 
@@ -34,9 +34,18 @@ type queueRowRenderer struct {
 
 type QueueItem struct {
 	Path         string
+	DisplayPath  string
 	BaseName     string
 	ParentFolder string
 	MediaType    string
+}
+
+func (item QueueItem) displayPath() string {
+	if item.DisplayPath != "" {
+		return item.DisplayPath
+	}
+
+	return item.Path
 }
 
 type SessionQueue struct {
@@ -193,10 +202,13 @@ func (screen *FyneScreen) newQueueItem(mediaPath string) (QueueItem, bool) {
 		return QueueItem{}, false
 	}
 
+	displayPath := queueDisplayPath(absPath)
+
 	return QueueItem{
 		Path:         absPath,
-		BaseName:     filepath.Base(absPath),
-		ParentFolder: filepath.Dir(absPath),
+		DisplayPath:  displayPath,
+		BaseName:     filepath.Base(displayPath),
+		ParentFolder: filepath.Dir(displayPath),
 		MediaType:    mediaType,
 	}, true
 }
@@ -377,7 +389,7 @@ func (screen *FyneScreen) refreshQueueStateUI() {
 	locked := screen.queueInteractionsLocked()
 
 	if queue != nil && selectedIndex >= 0 && selectedIndex < len(queue.Items) {
-		detailsText = queue.Items[selectedIndex].Path
+		detailsText = queue.Items[selectedIndex].displayPath()
 	}
 	if queue != nil && len(queue.Items) > 0 {
 		statusText = screen.queueStatusText(queue, activeIndex)

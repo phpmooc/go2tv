@@ -38,14 +38,20 @@ No need to copy files to a USB drive or set up a media server. Just select your 
 
 ## Installation
 
-**Download the latest release** from the [releases page](https://github.com/alexballas/Go2TV/releases/latest).
+**macOS**: Install with Homebrew:
+
+```bash
+brew install --cask go2tv
+```
+
+Or **download the latest release** from the [releases page](https://github.com/alexballas/Go2TV/releases/latest).
 
 - **Windows**: Download `go2tv_vX.Y.Z_windows_amd64.zip`, extract, and run `go2tv.exe`
 - **macOS**: Download `go2tv_vX.Y.Z_macOS_amd64.zip` (Intel) or `go2tv_vX.Y.Z_macOS_arm64.zip` (Apple Silicon), extract, and run the app
 - **Linux**: Download `go2tv_vX.Y.Z_linux_amd64.zip` (or appropriate arch), extract, and run `go2tv`
-- **Android**: Download the APK (`go2tv_vX.Y.Z.apk`) or zip (`go2tv_vX.Y.Z_android.zip`)
+- **Android**: Download `go2tv_vX.Y.Z.apk` for the arm64 build with bundled FFmpeg transcoding
 
-Go2TV is a single executable with no installation required. Just download and run.
+For release downloads, Go2TV is a single executable with no installation required. Just download and run.
 
 ### Optional: FFmpeg for Transcoding
 
@@ -56,6 +62,7 @@ When transcoding is enabled, Go2TV probes available GPU H.264 encoders first and
 - **macOS**: `brew install ffmpeg`
 - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH
 - **Flatpak**: FFmpeg is bundled automatically
+- **Android**: FFmpeg is bundled in the default APK. It is arm64-only and requires Android 9.0+.
 
 ---
 
@@ -212,7 +219,10 @@ Go2TV uses a custom Chromecast receiver hosted at https://cast-receiver.go2tv.ap
 
 **Firewall Configuration**
 
-Go2TV uses ports 3339-3438 for device discovery. If you're behind a firewall, allow inbound UDP traffic on these ports.
+If you're behind a firewall, allow inbound traffic from devices on your local network:
+
+- `3339-3438/udp` for DLNA/UPnP device discovery
+- `3500-4499/tcp` for the local HTTP media server used by DLNA and Chromecast playback
 
 ---
 
@@ -246,6 +256,14 @@ make appimage-ffmpeg
 - `APPIMAGE_FFMPEG_MODE=none`: build AppImage without ffmpeg binaries
 - Optional explicit paths: `APPIMAGE_FFMPEG_BIN=/path/ffmpeg APPIMAGE_FFPROBE_BIN=/path/ffprobe`
 
+**Android builds**
+
+``` console
+make android
+```
+
+`make android` builds the arm64 APK and bundles Android `ffmpeg`/`ffprobe` executables as native libraries. Set `ANDROID_NDK_HOME` and `ANDROID_HOME`.
+
 **Using Docker**
 
 Build the image:
@@ -268,3 +286,5 @@ Alexandros Ballas <alex@ballas.org>
 ## License
 
 MIT
+
+Artifacts that bundle FFmpeg inherit the bundled FFmpeg build's license obligations. The Android FFmpeg APK uses an Android NDK-built LGPL FFmpeg package by default; AppImages built with the default bundled FFmpeg use GPL builds.

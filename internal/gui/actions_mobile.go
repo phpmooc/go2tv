@@ -13,15 +13,17 @@ import (
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/dialog"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/storage"
+	"github.com/alexballas/refyne/v2/storage/repository"
+	"github.com/alexballas/refyne/v2/theme"
 	"github.com/pkg/errors"
 	"go2tv.app/go2tv/v2/castprotocol"
 	"go2tv.app/go2tv/v2/devices"
 	"go2tv.app/go2tv/v2/httphandlers"
+	"go2tv.app/go2tv/v2/internal/playback"
 	"go2tv.app/go2tv/v2/soapcalls"
 	"go2tv.app/go2tv/v2/utils"
 )
@@ -320,9 +322,10 @@ func playAction(screen *FyneScreen) {
 	}
 
 	if screen.mediafile != nil {
-		// On Android/iOS, Fyne storage only provides io.ReadCloser which doesn't support seeking.
-		// http.ServeContent requires io.ReadSeeker for range requests (video seeking).
-		// Solution: Copy file content to a temp file that we can use with os.File.
+		// http.ServeContent needs an io.ReadSeeker for range requests. We try
+		// storage.ReaderSeeker first (a real seekable handle, no copy) and fall
+		// back to a temp file copy when the platform can't provide one. See
+		// seekableMediaForCasting.
 		mediaURLinfo, err := storage.Reader(screen.mediafile)
 		check(screen.Current, err)
 		if err != nil {
@@ -357,46 +360,14 @@ func playAction(screen *FyneScreen) {
 			}
 			mediaFile = readerToBytes
 		} else {
-			// Video/Audio: copy to temp file for seeking support
-			mediaReader, err := storage.Reader(screen.mediafile)
+			// Video/Audio: serve a seekable reader directly when possible,
+			// falling back to a temp file copy otherwise.
+			mediaFile, err = seekableMediaForCasting(screen)
 			if err != nil {
 				check(w, err)
 				startAfreshPlayButton(screen)
 				return
 			}
-
-			ext := filepath.Ext(screen.MediaText.Text)
-			tempFile, err := os.CreateTemp("", "go2tv-*"+ext)
-			if err != nil {
-				mediaReader.Close()
-				check(w, fmt.Errorf("temp file create: %w", err))
-				startAfreshPlayButton(screen)
-				return
-			}
-
-			if _, err := io.Copy(tempFile, mediaReader); err != nil {
-				mediaReader.Close()
-				tempFile.Close()
-				os.Remove(tempFile.Name())
-				check(w, fmt.Errorf("temp file copy: %w", err))
-				startAfreshPlayButton(screen)
-				return
-			}
-			mediaReader.Close()
-			tempFile.Close()
-
-			// Store for cleanup in stopAction and use path for serving
-			screen.tempMediaFile = tempFile.Name()
-			mediaFile = screen.tempMediaFile
-		}
-	}
-
-	if screen.subsfile != nil {
-		subsFile, err = storage.Reader(screen.subsfile)
-		check(screen.Current, err)
-		if err != nil {
-			startAfreshPlayButton(screen)
-			return
 		}
 	}
 
@@ -427,6 +398,33 @@ func playAction(screen *FyneScreen) {
 		}
 	}
 
+	transcodeEnabled := mediaTranscodeEnabled(screen, mediaType)
+
+	// Non-transcoded local media is served with HTTP range support (see
+	// seekableMediaForCasting), so advertise it as seekable and let the renderer
+	// seek via its own controls. External URLs are streamed without range support
+	// and transcoded streams are live, so both stay non-seekable.
+	isSeek := !transcodeEnabled && !screen.ExternalMediaURL.Checked
+
+	ffmpegSubsPath := ""
+	if screen.subsfile != nil {
+		if transcodeEnabled {
+			ffmpegSubsPath, err = copySubsToTempFile(screen)
+			check(screen.Current, err)
+			if err != nil {
+				startAfreshPlayButton(screen)
+				return
+			}
+		} else {
+			subsFile, err = storage.Reader(screen.subsfile)
+			check(screen.Current, err)
+			if err != nil {
+				startAfreshPlayButton(screen)
+				return
+			}
+		}
+	}
+
 	screen.tvdata = &soapcalls.TVPayload{
 		ControlURL:                  screen.controlURL,
 		EventURL:                    screen.eventlURL,
@@ -439,6 +437,11 @@ func playAction(screen *FyneScreen) {
 		CurrentTimers:               make(map[string]*time.Timer),
 		MediaRenderersStates:        make(map[string]*soapcalls.States),
 		InitialMediaRenderersStates: make(map[string]bool),
+		Transcode:                   transcodeEnabled,
+		Seekable:                    isSeek,
+		LogOutput:                   screen.Debug,
+		FFmpegPath:                  screen.ffmpegPath,
+		FFmpegSubsPath:              ffmpegSubsPath,
 	}
 
 	screen.httpserver = httphandlers.NewServer(whereToListen)
@@ -477,6 +480,174 @@ func clearmediaAction(screen *FyneScreen) {
 func clearsubsAction(screen *FyneScreen) {
 	screen.SubsText.SetText("")
 	screen.subsfile = nil
+	removeTempFile(&screen.tempSubsFile)
+}
+
+func isImageMediaType(mediaType string) bool {
+	return strings.Contains(strings.ToLower(mediaType), "image")
+}
+
+func isAudioMediaType(mediaType string) bool {
+	return strings.HasPrefix(strings.ToLower(mediaType), "audio/")
+}
+
+// mediaTranscodeEnabled reports whether the Transcode option applies to the
+// selected media. Images are never transcoded; the checkbox is unchecked so
+// the user can see the option was ignored.
+func mediaTranscodeEnabled(screen *FyneScreen, mediaType string) bool {
+	if !screen.Transcode {
+		return false
+	}
+
+	if isImageMediaType(mediaType) {
+		disableTranscodeForImage(screen)
+		return false
+	}
+
+	return true
+}
+
+func disableTranscodeForImage(screen *FyneScreen) {
+	screen.Transcode = false
+	fyne.Do(func() {
+		if screen.TranscodeCheckBox != nil && screen.TranscodeCheckBox.Checked {
+			screen.TranscodeCheckBox.SetChecked(false)
+		}
+	})
+}
+
+func copySubsToTempFile(screen *FyneScreen) (string, error) {
+	removeTempFile(&screen.tempSubsFile)
+
+	subsReader, err := storage.Reader(screen.subsfile)
+	if err != nil {
+		return "", err
+	}
+	defer subsReader.Close()
+
+	ext := filepath.Ext(screen.SubsText.Text)
+	if ext == "" {
+		ext = ".srt"
+	}
+
+	tempFile, err := createMobileCacheTemp("go2tv-sub-*" + ext)
+	if err != nil {
+		return "", fmt.Errorf("temp subtitle create: %w", err)
+	}
+
+	if _, err := io.Copy(tempFile, subsReader); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("temp subtitle copy: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("temp subtitle close: %w", err)
+	}
+
+	screen.tempSubsFile = tempFile.Name()
+	return screen.tempSubsFile, nil
+}
+
+func mobileTranscodeOptions(screen *FyneScreen) (*utils.TranscodeOptions, error) {
+	subsPath := ""
+	if screen.subsfile != nil {
+		var err error
+		subsPath, err = copySubsToTempFile(screen)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &utils.TranscodeOptions{
+		FFmpegPath:   screen.ffmpegPath,
+		SubsPath:     subsPath,
+		SubtitleSize: utils.SubtitleSizeMedium,
+		LogOutput:    screen.Debug,
+	}, nil
+}
+
+// startChromecastMediaServer (re)starts the local HTTP server that serves the
+// media to the Chromecast. It returns the served media URL together with a
+// context that is cancelled once the server stops.
+func startChromecastMediaServer(screen *FyneScreen, mediaFilename string, tcOpts *utils.TranscodeOptions, media any) (string, context.Context, error) {
+	whereToListen, err := utils.URLtoListenIPandPort(screen.selectedDevice.addr)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if screen.httpserver != nil {
+		screen.httpserver.StopServer()
+	}
+
+	screen.httpserver = httphandlers.NewServer(whereToListen)
+	serverStoppedCTX, serverCTXStop := context.WithCancel(context.Background())
+	screen.serverStopCTX = serverStoppedCTX
+	screen.cancelServerStop = serverCTXStop
+
+	screen.httpserver.AddHandler(mediaFilename, nil, tcOpts, media)
+
+	serverStarted := make(chan error)
+	go func() {
+		screen.httpserver.StartServing(serverStarted)
+		serverCTXStop()
+	}()
+
+	if err := <-serverStarted; err != nil {
+		return "", nil, err
+	}
+
+	return "http://" + whereToListen + mediaFilename, serverStoppedCTX, nil
+}
+
+func startChromecastSubtitleServer(screen *FyneScreen) (string, context.Context, error) {
+	whereToListen, err := utils.URLtoListenIPandPort(screen.selectedDevice.addr)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if screen.httpserver != nil {
+		screen.httpserver.StopServer()
+	}
+
+	screen.httpserver = httphandlers.NewServer(whereToListen)
+	serverStoppedCTX, serverCTXStop := context.WithCancel(context.Background())
+	screen.serverStopCTX = serverStoppedCTX
+	screen.cancelServerStop = serverCTXStop
+
+	serverStarted := make(chan error)
+	go func() {
+		screen.httpserver.StartServing(serverStarted)
+		serverCTXStop()
+	}()
+
+	if err := <-serverStarted; err != nil {
+		return "", nil, err
+	}
+
+	return whereToListen, serverStoppedCTX, nil
+}
+
+func hasChromecastMobileSubtitles(screen *FyneScreen) bool {
+	if screen.subsfile == nil {
+		return false
+	}
+
+	switch strings.ToLower(filepath.Ext(screen.SubsText.Text)) {
+	case ".srt", ".vtt":
+		return true
+	default:
+		return false
+	}
+}
+
+func removeTempFile(path *string) {
+	if *path == "" {
+		return
+	}
+
+	os.Remove(*path)
+	*path = ""
 }
 
 func stopAction(screen *FyneScreen) {
@@ -488,11 +659,9 @@ func stopAction(screen *FyneScreen) {
 	// Clear casting media type immediately
 	screen.SetMediaType("")
 
-	// Clean up temp media file
-	if screen.tempMediaFile != "" {
-		os.Remove(screen.tempMediaFile)
-		screen.tempMediaFile = ""
-	}
+	// Clean up temp files
+	removeTempFile(&screen.tempMediaFile)
+	removeTempFile(&screen.tempSubsFile)
 
 	// Handle Chromecast stop
 	if screen.chromecastClient != nil && screen.chromecastClient.IsConnected() {
@@ -556,7 +725,6 @@ func getDevices() ([]devType, error) {
 func volumeAction(screen *FyneScreen, up bool) {
 	w := screen.Current
 	go func() {
-
 		// Handle Chromecast volume
 		if screen.selectedDeviceType == devices.DeviceTypeChromecast {
 			if screen.chromecastClient == nil || !screen.chromecastClient.IsConnected() {
@@ -624,6 +792,51 @@ func volumeAction(screen *FyneScreen, up bool) {
 	}()
 }
 
+// seekableMediaForCasting returns a value for the HTTP server's media handler.
+// When the platform can provide a real seekable handle (e.g. an Android
+// content:// file descriptor via storage.ReaderSeeker), it returns a factory
+// that opens a fresh seekable reader per request, so http.ServeContent can
+// satisfy range requests without copying the file. Otherwise it falls back to
+// copying the media to a temp file (recorded in screen.tempMediaFile for
+// cleanup in stopAction) and returns that path.
+func seekableMediaForCasting(screen *FyneScreen) (any, error) {
+	uri := screen.mediafile
+
+	// Fast path: a real seekable handle is available. Probe once, then open a
+	// fresh reader per request (each HTTP request needs its own read offset).
+	if rs, err := storage.ReaderSeeker(uri); err == nil {
+		rs.Close()
+		return httphandlers.MediaReaderSeeker(func() (io.ReadSeekCloser, error) {
+			return storage.ReaderSeeker(uri)
+		}), nil
+	} else if !errors.Is(err, repository.ErrOperationNotSupported) {
+		return nil, err
+	}
+
+	// Fallback: copy to a temp file we can serve as a seekable os.File.
+	mediaReader, err := storage.Reader(uri)
+	if err != nil {
+		return nil, err
+	}
+	defer mediaReader.Close()
+
+	ext := filepath.Ext(screen.MediaText.Text)
+	tempFile, err := createMobileCacheTemp("go2tv-*" + ext)
+	if err != nil {
+		return nil, fmt.Errorf("temp file create: %w", err)
+	}
+
+	if _, err := io.Copy(tempFile, mediaReader); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return nil, fmt.Errorf("temp file copy: %w", err)
+	}
+	tempFile.Close()
+
+	screen.tempMediaFile = tempFile.Name()
+	return screen.tempMediaFile, nil
+}
+
 func startAfreshPlayButton(screen *FyneScreen) {
 	screen.nextChromecastActionID()
 
@@ -688,7 +901,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			return
 		}
 
-		// Note: Debug logging disabled on mobile - zerolog crashes on Android
+		// Note: Debug logging disabled on mobile.
 		// client.LogOutput = screen.Debug
 
 		if err := client.Connect(); err != nil {
@@ -702,7 +915,10 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 
 	var mediaURL string
 	var mediaType string
+	var transcode bool
 	serverStoppedCTX := context.Background()
+	subtitleHost := ""
+	screen.mediaDuration = 0
 
 	if screen.ExternalMediaURL.Checked {
 		mediaURL = screen.MediaText.Text
@@ -716,22 +932,81 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 		mediaType = inferredMediaType
 		mediaURLinfo.Close()
 
+		wasTranscode := screen.Transcode
+		transcode = playback.ChromecastTranscodeEnabled(mediaTranscodeEnabled(screen, mediaType), mediaURL, mediaType)
+		if wasTranscode && !transcode {
+			screen.Transcode = false
+			fyne.Do(func() {
+				if screen.TranscodeCheckBox != nil && screen.TranscodeCheckBox.Checked {
+					screen.TranscodeCheckBox.SetChecked(false)
+				}
+			})
+		}
+
+		screen.SetMediaType(mediaType)
+
 		if screen.selectedDevice.isAudioOnly && (strings.Contains(mediaType, "video") || strings.Contains(mediaType, "image")) {
 			check(w, errors.New(lang.L("Video/Image file not supported by audio-only device")))
 			startAfreshPlayButton(screen)
 			return
 		}
 
-		var cancel context.CancelFunc
-		serverStoppedCTX, cancel = context.WithCancel(context.Background())
-		screen.serverStopCTX = serverStoppedCTX
-		go func() { <-serverStoppedCTX.Done(); cancel() }()
+		if transcode {
+			stream, err := utils.StreamURL(context.Background(), mediaURL)
+			if err != nil {
+				check(w, err)
+				startAfreshPlayButton(screen)
+				return
+			}
+
+			tcOpts, err := mobileTranscodeOptions(screen)
+			if err != nil {
+				stream.Close()
+				check(w, err)
+				startAfreshPlayButton(screen)
+				return
+			}
+
+			servedURL, serverCTX, err := startChromecastMediaServer(screen, "/"+utils.ConvertFilename(mediaURL), tcOpts, stream)
+			if err != nil {
+				stream.Close()
+				check(w, err)
+				startAfreshPlayButton(screen)
+				return
+			}
+
+			serverStoppedCTX = serverCTX
+			mediaURL = servedURL
+			mediaType = "video/mp4"
+		} else {
+			if hasChromecastMobileSubtitles(screen) {
+				host, serverCTX, err := startChromecastSubtitleServer(screen)
+				if err != nil {
+					check(w, err)
+					startAfreshPlayButton(screen)
+					return
+				}
+
+				subtitleHost = host
+				serverStoppedCTX = serverCTX
+			} else {
+				if screen.httpserver != nil {
+					screen.httpserver.StopServer()
+					screen.httpserver = nil
+				}
+
+				var cancel context.CancelFunc
+				serverStoppedCTX, cancel = context.WithCancel(context.Background())
+				screen.serverStopCTX = serverStoppedCTX
+				screen.cancelServerStop = cancel
+			}
+		}
 
 	} else {
-		// LOCAL FILE: Serve via internal HTTP server
-		// On Android/iOS, Fyne storage only provides io.ReadCloser which doesn't support seeking.
-		// http.ServeContent requires io.ReadSeeker for range requests (video seeking).
-		// Solution: Copy file content to a temp file that we can use with os.File.
+		// LOCAL FILE: Serve via internal HTTP server.
+		// http.ServeContent needs an io.ReadSeeker for range requests; we serve
+		// a seekable reader directly when available and fall back to a temp file
+		// copy otherwise (see seekableMediaForCasting).
 		mediaReader, err := storage.Reader(screen.mediafile)
 		if err != nil {
 			check(w, err)
@@ -747,87 +1022,62 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 			return
 		}
 
+		transcode = mediaTranscodeEnabled(screen, mediaType) && !isAudioMediaType(mediaType)
+
+		screen.SetMediaType(mediaType)
+
 		if screen.selectedDevice.isAudioOnly && (strings.Contains(mediaType, "video") || strings.Contains(mediaType, "image")) {
 			check(w, errors.New(lang.L("Video/Image file not supported by audio-only device")))
 			startAfreshPlayButton(screen)
 			return
 		}
 
-		whereToListen, err := utils.URLtoListenIPandPort(screen.selectedDevice.addr)
+		// Serve a seekable reader directly when possible, falling back to a
+		// temp file copy otherwise (cleaned up via screen.tempMediaFile).
+		media, err := seekableMediaForCasting(screen)
 		if err != nil {
 			check(w, err)
 			startAfreshPlayButton(screen)
 			return
 		}
 
-		if screen.httpserver != nil {
-			screen.httpserver.StopServer()
+		var tcOpts *utils.TranscodeOptions
+		if transcode {
+			tcOpts, err = mobileTranscodeOptions(screen)
+			if err != nil {
+				check(w, err)
+				startAfreshPlayButton(screen)
+				return
+			}
+			if mediaPath, ok := media.(string); ok {
+				if duration, err := utils.DurationForMediaSeconds(screen.ffmpegPath, mediaPath); err == nil {
+					screen.mediaDuration = duration
+				}
+			}
+			mediaType = "video/mp4"
 		}
 
-		screen.httpserver = httphandlers.NewServer(whereToListen)
-		var serverCTXStop context.CancelFunc
-		serverStoppedCTX, serverCTXStop = context.WithCancel(context.Background())
-		screen.serverStopCTX = serverStoppedCTX
-		screen.cancelServerStop = serverCTXStop
-
-		// Get media reader for copying to temp file
-		mediaFile, err := storage.Reader(screen.mediafile)
+		servedURL, serverCTX, err := startChromecastMediaServer(screen, "/"+utils.ConvertFilename(screen.MediaText.Text), tcOpts, media)
 		if err != nil {
 			check(w, err)
 			startAfreshPlayButton(screen)
 			return
 		}
 
-		// Copy to temp file for http.ServeContent (needs io.ReadSeeker)
-		ext := filepath.Ext(screen.MediaText.Text)
-		tempFile, err := os.CreateTemp("", "go2tv-*"+ext)
-		if err != nil {
-			mediaFile.Close()
-			check(w, fmt.Errorf("temp file create: %w", err))
-			startAfreshPlayButton(screen)
-			return
-		}
-
-		if _, err := io.Copy(tempFile, mediaFile); err != nil {
-			mediaFile.Close()
-			tempFile.Close()
-			os.Remove(tempFile.Name())
-			check(w, fmt.Errorf("temp file copy: %w", err))
-			startAfreshPlayButton(screen)
-			return
-		}
-		mediaFile.Close()
-		tempFile.Close()
-
-		tempFilePath := tempFile.Name()
-
-		// Add media handler with temp file path (string type triggers os.Open in handler)
-		mediaFilename := "/" + utils.ConvertFilename(screen.MediaText.Text)
-		screen.httpserver.AddHandler(mediaFilename, nil, nil, tempFilePath)
-
-		serverStarted := make(chan error)
-		go func() {
-			screen.httpserver.StartServing(serverStarted)
-			// Clean up temp file when server stops
-			os.Remove(tempFilePath)
-			serverCTXStop()
-		}()
-
-		if err := <-serverStarted; err != nil {
-			os.Remove(tempFilePath)
-			check(w, err)
-			startAfreshPlayButton(screen)
-			return
-		}
-
-		mediaURL = "http://" + whereToListen + mediaFilename
+		serverStoppedCTX = serverCTX
+		mediaURL = servedURL
 	}
 
 	// Handle subtitles
 	var subtitleURL string
-	if screen.subsfile != nil && screen.httpserver != nil {
-		mediaURLParsed, err := url.Parse(mediaURL)
-		if err == nil && mediaURLParsed.Host != "" {
+	if hasChromecastMobileSubtitles(screen) && screen.httpserver != nil && !transcode {
+		if subtitleHost == "" {
+			mediaURLParsed, err := url.Parse(mediaURL)
+			if err == nil {
+				subtitleHost = mediaURLParsed.Host
+			}
+		}
+		if subtitleHost != "" {
 			ext := strings.ToLower(filepath.Ext(screen.SubsText.Text))
 			switch ext {
 			case ".srt":
@@ -837,7 +1087,7 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 					subsReader.Close()
 					if err == nil {
 						screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, webvttData)
-						subtitleURL = "http://" + mediaURLParsed.Host + "/subtitles.vtt"
+						subtitleURL = "http://" + subtitleHost + "/subtitles.vtt"
 					}
 				}
 			case ".vtt":
@@ -847,18 +1097,17 @@ func chromecastPlayAction(screen *FyneScreen, actionID uint64) {
 					subsReader.Close()
 					if err == nil {
 						screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, subsData)
-						subtitleURL = "http://" + mediaURLParsed.Host + "/subtitles.vtt"
+						subtitleURL = "http://" + subtitleHost + "/subtitles.vtt"
 					}
 				}
 			}
 		}
 	}
 
-	// Load media (duration=0 since mobile doesn't support transcoding)
 	// Use LIVE stream type for URL streams (DMR shows LIVE badge, but buffer unchanged)
 	go func() {
 		live := screen.ExternalMediaURL.Checked
-		if err := client.Load(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), 0, 0, subtitleURL, live); err != nil {
+		if err := client.Load(mediaURL, mediaType, chromecastMediaTitle(screen, mediaURL), 0, screen.mediaDuration, subtitleURL, live); err != nil {
 			if !screen.isChromecastActionCurrent(actionID) {
 				return
 			}
@@ -877,6 +1126,10 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 	defer ticker.Stop()
 
 	var mediaStarted bool
+
+	// Stall detection state for the near-end safety net below.
+	var stallLastTime float32 = -1
+	stallTicks := 0
 
 	for {
 		select {
@@ -931,16 +1184,28 @@ func chromecastStatusWatcher(ctx context.Context, screen *FyneScreen, actionID u
 				}
 			}
 
-			// Fallback: Detect media completion when CurrentTime reaches Duration
-			if mediaStarted && status.Duration > 0 && status.CurrentTime >= status.Duration-1.5 {
-				if !screen.isChromecastActionCurrent(actionID) {
+			// Safety net: natural completion is detected via the IDLE state
+			// above once the receiver tears the session down. This catches a
+			// session that lingers reporting a frozen PLAYING position after
+			// the stream actually ends — a genuinely playing video advances
+			// on every poll.
+			nearEnd := mediaStarted && status.PlayerState == "PLAYING" &&
+				status.Duration > 0 && status.CurrentTime >= status.Duration-5
+			if nearEnd && status.CurrentTime == stallLastTime {
+				stallTicks++
+				if stallTicks >= 3 {
+					if !screen.isChromecastActionCurrent(actionID) {
+						return
+					}
+					screen.Fini()
+					if !screen.Medialoop {
+						startAfreshPlayButton(screen)
+					}
 					return
 				}
-				screen.Fini()
-				if !screen.Medialoop {
-					startAfreshPlayButton(screen)
-				}
-				return
+			} else {
+				stallLastTime = status.CurrentTime
+				stallTicks = 0
 			}
 		}
 	}

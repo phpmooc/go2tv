@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -42,14 +43,24 @@ func ServeChromecastTranscodedStream(
 		return ErrInvalidInput
 	}
 
+	isRawInput := opts.RawInput != nil
+
+	// Readers backed by a real file (e.g. Android content:// descriptors) are
+	// handed to ffmpeg as a seekable fd rather than an unseekable pipe.
+	if r, ok := input.(io.Reader); ok && !isRawInput {
+		if f, ok := underlyingOSFile(r); ok {
+			input = f
+		}
+	}
+
 	var in string
-	isRawInput := false
 	switch f := input.(type) {
 	case string:
 		in = f
+	case *os.File:
+		in = ffmpegInputForFile(opts.FFmpegPath, f)
 	case io.Reader:
 		in = "pipe:0"
-		isRawInput = opts != nil && opts.RawInput != nil
 	default:
 		return ErrInvalidInput
 	}
@@ -61,37 +72,16 @@ func ServeChromecastTranscodedStream(
 		_ = ff.Process.Kill()
 	}
 
-	// Build video filter chain
-	baseFilter := "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
-
-	// Add subtitle burning if configured.
+	// Build video filter chain.
 	// Raw screencast input doesn't carry subtitle tracks.
-	if !isRawInput && opts.SubsPath != "" {
-		charenc, err := getCharDet(opts.SubsPath)
-		if err != nil {
+	scaleFilter := "scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"
+	subFilter := ""
+	if !isRawInput {
+		var err error
+		subFilter, err = subtitleBurnFilter(opts.FFmpegPath, opts.SubsPath, opts.SubtitleSize)
+		if err != nil && opts.LogOutput != nil {
 			// Log error but continue without subtitles
-			if opts.LogOutput != nil {
-				opts.LogError("ServeChromecastTranscodedStream", "getCharDet failed, continuing without subtitles", err)
-			}
-		} else {
-			fontSize := 24 // Medium (default)
-			switch opts.SubtitleSize {
-			case SubtitleSizeSmall:
-				fontSize = 20
-			case SubtitleSizeLarge:
-				fontSize = 30
-			}
-
-			forceStyle := fmt.Sprintf(":force_style='FontSize=%d,Outline=1'", fontSize)
-
-			// Escape special characters for FFmpeg filtergraph syntax
-			escapedPath := escapeFFmpegPath(opts.SubsPath)
-
-			if charenc == "UTF-8" {
-				baseFilter = fmt.Sprintf("subtitles='%s'%s,%s", escapedPath, forceStyle, baseFilter)
-			} else {
-				baseFilter = fmt.Sprintf("subtitles='%s':charenc=%s%s,%s", escapedPath, charenc, forceStyle, baseFilter)
-			}
+			opts.LogError("ServeChromecastTranscodedStream", "subtitle burn-in skipped", err)
 		}
 	}
 
@@ -101,12 +91,12 @@ func ServeChromecastTranscodedStream(
 	}
 	encoderPlan := selectTranscodeVideoEncoder(opts.FFmpegPath, profile)
 	buildArgs := func(plan videoEncoderPlan) []string {
-		vf := joinVideoFilters(baseFilter, plan.filterTail)
+		vf := joinVideoFilters(subFilter, scaleFilter, plan.filterTail)
 
 		// For piped input, skip -ss parameter entirely (even -ss 0) as it can cause issues
 		// Also skip -re for piped input as it interacts badly with streams
 		args := []string{opts.FFmpegPath}
-		if in != "pipe:0" {
+		if realtimePacedInput(in) {
 			args = append(args, "-re")
 		}
 
@@ -124,7 +114,8 @@ func ServeChromecastTranscodedStream(
 			if frameRate == 0 {
 				frameRate = 60
 			}
-			args = append(args,
+			args = append(
+				args,
 				"-f", "rawvideo",
 				"-pix_fmt", pixelFormat,
 				"-s", fmt.Sprintf("%dx%d", opts.RawInput.Width, opts.RawInput.Height),
@@ -132,7 +123,8 @@ func ServeChromecastTranscodedStream(
 			)
 		}
 
-		args = append(args,
+		args = append(
+			args,
 			"-i", in,
 			"-vf", vf,
 		)
@@ -144,7 +136,8 @@ func ServeChromecastTranscodedStream(
 			// Screen capture stream contains video only.
 			args = append(args, "-an")
 		} else {
-			args = append(args,
+			args = append(
+				args,
 				"-c:a", "aac",
 				"-b:a", "192k",
 				"-ar", "48000",
@@ -152,7 +145,8 @@ func ServeChromecastTranscodedStream(
 			)
 		}
 
-		args = append(args,
+		args = append(
+			args,
 			"-movflags", "+frag_keyframe+empty_moov+default_base_moof",
 			"-f", "mp4",
 			"pipe:1",

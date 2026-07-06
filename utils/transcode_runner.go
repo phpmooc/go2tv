@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -32,7 +33,16 @@ func runFFmpegTranscode(
 	setSysProcAttr(cmd)
 
 	*ff = *cmd
-	if in == "pipe:0" {
+	switch in {
+	case "fd:":
+		// The child reads fd 0 directly and shares its offset, so rewind to
+		// keep retries (e.g. hardware -> software encoder) deterministic.
+		f := input.(*os.File)
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return 0, fmt.Errorf("rewind ffmpeg input: %w", err)
+		}
+		ff.Stdin = f
+	case "pipe:0":
 		ff.Stdin = input.(io.Reader)
 	}
 

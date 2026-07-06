@@ -10,14 +10,14 @@ import (
 	"strconv"
 	"strings"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	fynedialog "fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/lang"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
+	"github.com/alexballas/refyne/v2"
+	"github.com/alexballas/refyne/v2/container"
+	fynedialog "github.com/alexballas/refyne/v2/dialog"
+	"github.com/alexballas/refyne/v2/lang"
+	"github.com/alexballas/refyne/v2/layout"
+	"github.com/alexballas/refyne/v2/storage"
+	"github.com/alexballas/refyne/v2/theme"
+	"github.com/alexballas/refyne/v2/widget"
 	xfilepicker "github.com/alexballas/xfilepicker/dialog"
 	"go2tv.app/go2tv/v2/rtmp"
 	"go2tv.app/go2tv/v2/utils"
@@ -80,8 +80,13 @@ func newSettingsCheckboxField(control fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewPadded(control)
 }
 
-func settingsWindow(s *FyneScreen) fyne.CanvasObject {
+func (s *FyneScreen) setAutoPlaySameTypes(enabled bool) {
+	fyne.CurrentApp().Preferences().SetBool("AutoPlaySameTypes", enabled)
+	s.SkinNextOnlySameTypes = enabled
+	s.refreshTraversalControls()
+}
 
+func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	w := s.Current
 
 	dropdownTheme := widget.NewSelect([]string{lang.L("System Default"), lang.L("Light"), lang.L("Dark")}, parseTheme(s))
@@ -133,7 +138,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		ffmpegTextEntry.SetText(path)
 		updatingFFmpegEntry = false
 		s.ffmpegPath, _ = utils.ResolveFFmpegPath("")
-		s.ffmpegPathChanged = true
+		s.markFFmpegPathChanged()
 	})
 
 	ffmpegFolderSelect := widget.NewButtonWithIcon("", theme.FolderOpenIcon(), func() {
@@ -169,7 +174,6 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 		resumeHotkeys = suspendHotkeys(s)
 		fd.Show()
 		fd.Resize(fyne.NewSize(filePickerFillSize, filePickerFillSize))
-
 	})
 
 	ffmpegRightButtons := container.NewHBox(ffmpegFolderSelect, ffmpegFolderReset)
@@ -191,7 +195,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 			s.ffmpegPath = update
 		}
 		fyne.CurrentApp().Preferences().SetString("ffmpeg", update)
-		s.ffmpegPathChanged = true
+		s.markFFmpegPathChanged()
 	}
 
 	debugExport := widget.NewButton(lang.L("Export Diagnostics"), func() {
@@ -242,8 +246,7 @@ func settingsWindow(s *FyneScreen) fyne.CanvasObject {
 	dropdownTheme.Refresh()
 
 	sameTypeAutoNextCheck := widget.NewCheck(lang.L("Only Auto-Play Same File Types"), func(b bool) {
-		fyne.CurrentApp().Preferences().SetBool("AutoPlaySameTypes", b)
-		s.SkinNextOnlySameTypes = b
+		s.setAutoPlaySameTypes(b)
 	})
 
 	sameTypeAutoNextOption := fyne.CurrentApp().Preferences().BoolWithFallback("AutoPlaySameTypes", true)

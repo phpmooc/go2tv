@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
+	"github.com/alexballas/refyne/v2"
 	"go2tv.app/go2tv/v2/devices"
 )
 

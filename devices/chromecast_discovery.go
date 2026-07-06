@@ -345,7 +345,6 @@ func healthCheckChromecastDevices(ctx context.Context) {
 }
 
 func getChromecastDevicesSnapshot() []Device {
-
 	ccMu.Lock()
 	defer ccMu.Unlock()
 

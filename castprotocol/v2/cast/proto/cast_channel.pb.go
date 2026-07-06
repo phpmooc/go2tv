@@ -27,9 +27,11 @@ import (
 )
 
 // Reference proto, json, and math imports to suppress error if they are not otherwise used.
-var _ = proto.Marshal
-var _ = &json.SyntaxError{}
-var _ = math.Inf
+var (
+	_ = proto.Marshal
+	_ = &json.SyntaxError{}
+	_ = math.Inf
+)
 
 // Always pass a version of the protocol for future compatibility
 // requirements.
@@ -42,6 +44,7 @@ const (
 var CastMessage_ProtocolVersion_name = map[int32]string{
 	0: "CASTV2_1_0",
 }
+
 var CastMessage_ProtocolVersion_value = map[string]int32{
 	"CASTV2_1_0": 0,
 }
@@ -51,9 +54,11 @@ func (x CastMessage_ProtocolVersion) Enum() *CastMessage_ProtocolVersion {
 	*p = x
 	return p
 }
+
 func (x CastMessage_ProtocolVersion) String() string {
 	return proto.EnumName(CastMessage_ProtocolVersion_name, int32(x))
 }
+
 func (x *CastMessage_ProtocolVersion) UnmarshalJSON(data []byte) error {
 	value, err := proto.UnmarshalJSONEnum(CastMessage_ProtocolVersion_value, data, "CastMessage_ProtocolVersion")
 	if err != nil {
@@ -75,6 +80,7 @@ var CastMessage_PayloadType_name = map[int32]string{
 	0: "STRING",
 	1: "BINARY",
 }
+
 var CastMessage_PayloadType_value = map[string]int32{
 	"STRING": 0,
 	"BINARY": 1,
@@ -85,9 +91,11 @@ func (x CastMessage_PayloadType) Enum() *CastMessage_PayloadType {
 	*p = x
 	return p
 }
+
 func (x CastMessage_PayloadType) String() string {
 	return proto.EnumName(CastMessage_PayloadType_name, int32(x))
 }
+
 func (x *CastMessage_PayloadType) UnmarshalJSON(data []byte) error {
 	value, err := proto.UnmarshalJSONEnum(CastMessage_PayloadType_value, data, "CastMessage_PayloadType")
 	if err != nil {
@@ -108,6 +116,7 @@ var AuthError_ErrorType_name = map[int32]string{
 	0: "INTERNAL_ERROR",
 	1: "NO_TLS",
 }
+
 var AuthError_ErrorType_value = map[string]int32{
 	"INTERNAL_ERROR": 0,
 	"NO_TLS":         1,
@@ -118,9 +127,11 @@ func (x AuthError_ErrorType) Enum() *AuthError_ErrorType {
 	*p = x
 	return p
 }
+
 func (x AuthError_ErrorType) String() string {
 	return proto.EnumName(AuthError_ErrorType_name, int32(x))
 }
+
 func (x *AuthError_ErrorType) UnmarshalJSON(data []byte) error {
 	value, err := proto.UnmarshalJSONEnum(AuthError_ErrorType_value, data, "AuthError_ErrorType")
 	if err != nil {
