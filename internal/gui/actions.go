@@ -1713,21 +1713,26 @@ out:
 				}
 
 				if nextURI == "" {
-					if screen.tvdata == nil {
+					// Stop/skip actions clear these fields from another
+					// goroutine before this watcher's context is cancelled,
+					// so snapshot both and skip the tick if either is gone.
+					tvdata := screen.tvdata
+					srv := screen.httpserver
+					if tvdata == nil || srv == nil {
 						continue
 					}
 
 					// No need to check for the error as this is something
 					// that we did in previous steps in our workflow
-					mPath, _ := url.Parse(screen.tvdata.MediaURL)
-					sPath, _ := url.Parse(screen.tvdata.SubtitlesURL)
+					mPath, _ := url.Parse(tvdata.MediaURL)
+					sPath, _ := url.Parse(tvdata.SubtitlesURL)
 
 					// Make sure we clean up after ourselves and avoid
 					// leaving any dangling handlers. Given the nextURI is ""
 					// we know that the previously playing media entry was
 					// replaced by the one in the NextURI entry.
-					screen.httpserver.RemoveHandler(mPath.Path)
-					screen.httpserver.RemoveHandler(sPath.Path)
+					srv.RemoveHandler(mPath.Path)
+					srv.RemoveHandler(sPath.Path)
 
 					_, mediaPath, err := getNextAutoPlayMediaOrError(screen)
 					if err != nil {
@@ -1869,17 +1874,20 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 			// Set casting media type
 			screen.SetMediaType(mediaType)
 
-			// Get server address
-			whereToListen := screen.httpserver.GetAddr()
+			// Get server address. A concurrent stop action may have already
+			// cleared the field, in which case there is nothing to skip to.
+			server := screen.httpserver
+			if server == nil {
+				return
+			}
+			whereToListen := server.GetAddr()
 
 			var mediaURL string
 			var subtitleURL string
 
 			if transcode {
 				// TRANSCODING PATH: Stop server and restart with new file and transcode options
-				if screen.httpserver != nil {
-					screen.httpserver.StopServer()
-				}
+				server.StopServer()
 
 				// Get actual media duration from ffprobe (Chromecast can't report it for transcoded streams)
 				if duration, err := utils.DurationForMediaSeconds(screen.ffmpegPath, screen.mediafile); err == nil {
@@ -1901,7 +1909,8 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				}
 
 				// Create new HTTP server with transcoding
-				screen.httpserver = httphandlers.NewServer(whereToListen)
+				server = httphandlers.NewServer(whereToListen)
+				screen.httpserver = server
 				serverStarted := make(chan error)
 				var serverCTXStop context.CancelFunc
 				serverStoppedCTX, serverCTXStop = context.WithCancel(context.Background())
@@ -1909,7 +1918,7 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				screen.cancelServerStop = serverCTXStop
 
 				go func() {
-					screen.httpserver.StartSimpleServerWithTranscode(serverStarted, screen.mediafile, tcOpts)
+					server.StartSimpleServerWithTranscode(serverStarted, screen.mediafile, tcOpts)
 					serverCTXStop()
 				}()
 
@@ -1929,18 +1938,18 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				screen.mediaDuration = 0
 
 				// Get subtitle URL if needed (remove old handler first)
-				screen.httpserver.RemoveHandler("/subtitles.vtt")
+				server.RemoveHandler("/subtitles.vtt")
 				if screen.subsfile != "" {
 					ext := strings.ToLower(filepath.Ext(screen.subsfile))
 					switch ext {
 					case ".srt":
 						webvttData, err := utils.ConvertSRTtoWebVTT(screen.subsfile)
 						if err == nil {
-							screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, webvttData)
+							server.AddHandler("/subtitles.vtt", nil, nil, webvttData)
 							subtitleURL = "http://" + whereToListen + "/subtitles.vtt"
 						}
 					case ".vtt":
-						screen.httpserver.AddHandler("/subtitles.vtt", nil, nil, screen.subsfile)
+						server.AddHandler("/subtitles.vtt", nil, nil, screen.subsfile)
 						subtitleURL = "http://" + whereToListen + "/subtitles.vtt"
 					}
 				}
@@ -1950,8 +1959,8 @@ func skipToMediaPathAction(screen *FyneScreen, mediaPath string) {
 				// URL uses ConvertFilename (encoded) for valid HTTP URL with special characters
 				oldHandlerPath := "/" + filepath.Base(oldMediaPath)
 				newHandlerPath := "/" + filepath.Base(screen.mediafile)
-				screen.httpserver.RemoveHandler(oldHandlerPath)
-				screen.httpserver.AddHandler(newHandlerPath, nil, nil, screen.mediafile)
+				server.RemoveHandler(oldHandlerPath)
+				server.AddHandler(newHandlerPath, nil, nil, screen.mediafile)
 
 				// Build media URL using URL-encoded filename (for special chars like brackets)
 				mediaURL = "http://" + whereToListen + "/" + utils.ConvertFilename(screen.mediafile)

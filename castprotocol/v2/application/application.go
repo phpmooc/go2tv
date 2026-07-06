@@ -410,6 +410,10 @@ func (a *Application) Update() error {
 	a.volumeReceiver = &recvStatus.Status.Volume
 
 	if a.application == nil || a.application.IsIdleScreen {
+		// No app (or just the idle screen) means our media session is
+		// gone. Clear the cached snapshot so callers see IDLE instead
+		// of a stale last-known PLAYING state.
+		a.media = nil
 		return nil
 	}
 
@@ -424,6 +428,14 @@ func (a *Application) updateMediaStatus() error {
 	mediaStatus, err := a.getMediaStatus()
 	if err != nil {
 		return err
+	}
+	if len(mediaStatus.Status) == 0 {
+		// The receiver reports no media session, e.g. the media
+		// finished and the session was torn down between polls.
+		// Clear the cached snapshot so callers see IDLE instead of
+		// a stale last-known PLAYING state.
+		a.media = nil
+		return nil
 	}
 	for _, media := range mediaStatus.Status {
 		a.media = &media
